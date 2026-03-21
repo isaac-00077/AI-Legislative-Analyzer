@@ -1,7 +1,11 @@
-from sqlalchemy import Column, Integer, String, Boolean
+from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, Text
+from sqlalchemy.orm import relationship
 from database import Base
 
-class Bill(Base): #This class defines the structure of the "bills" table in the database. Each instance of this class represents a row in the "bills" table, with columns for id, title, pdf_url, local_path, and processed status.
+from pgvector.sqlalchemy import Vector
+
+
+class Bill(Base):
     __tablename__ = "bills"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -9,3 +13,27 @@ class Bill(Base): #This class defines the structure of the "bills" table in the 
     pdf_url = Column(String, unique=True)
     local_path = Column(String)
     processed = Column(Boolean, default=False)
+
+    # Embedding of the bill title for semantic title search
+    title_embedding = Column(Vector(384))
+
+    # 🔥 NEW: relationship
+    chunks = relationship("Chunk", back_populates="bill")
+    # Short human-readable summary for dashboard
+    summary = Column(Text)
+
+
+class Chunk(Base):
+    __tablename__ = "chunks"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    bill_id = Column(Integer, ForeignKey("bills.id"))
+
+    original_text = Column(Text)
+    compressed_text = Column(Text)
+
+    # 🔥 EMBEDDING (MiniLM = 384 dim)
+    embedding = Column(Vector(384))
+
+    bill = relationship("Bill", back_populates="chunks")

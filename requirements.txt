@@ -3,3 +3,9 @@ uvicorn
 sqlalchemy
 requests
 beautifulsoup4
+pgvector
+psycopg2-binary
+sentence-transformers
+pymupdf
+python-dotenv
+groq

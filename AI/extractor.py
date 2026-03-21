@@ -1,37 +1,34 @@
-import os
+import json
+from pathlib import Path
 import fitz
-from chunker import chunk_text
+
+from AI.chunker import chunk_text
+from AI.compressor import compress_chunks_batch
+
 
 def extract_text_from_pdf(pdf_path):
-    try:
-        doc = fitz.open(pdf_path)
-        text = ""
+    pdf_path = Path(pdf_path)
+    pages_text = []
 
+    with fitz.open(pdf_path) as doc:
         for page in doc:
-            text += page.get_text()
+            text = page.get_text("text", sort=True).strip()
+            if text:
+                pages_text.append(text)
 
-        return text
-
-    except Exception as e:
-        print("❌ Error extracting text:", e)
-        return ""
+    return "\n\n".join(pages_text)
 
 
-# 🔥 FIXED PATH HANDLING
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+def process_pdf_to_chunks(pdf_path):
+    text = extract_text_from_pdf(pdf_path)
 
-path = os.path.join(
-    BASE_DIR,
-    "data",
-    "pdfs",
-    "the_cable_television_networks_(regulation).pdf"
-)
+    if not text:
+        return None, None
 
-text = extract_text_from_pdf(path)
-chunks = chunk_text(text)
+    # 🔹 original chunks
+    original_chunks = chunk_text(text, chunk_size=180, overlap=40)
 
-print("✅ TOTAL CHUNKS:", len(chunks))
+    # 🔹 compressed chunks
+    compressed_chunks = compress_chunks_batch(original_chunks)
 
-for i, chunk in enumerate(chunks[:3]):
-    print(f"\n--- CHUNK {i+1} ---\n")
-    print(chunk[:300])
+    return original_chunks, compressed_chunks
