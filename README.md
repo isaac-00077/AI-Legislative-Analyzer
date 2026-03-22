@@ -139,7 +139,7 @@ Create and activate a virtual environment (example using Python venv):
 ```bash
 cd "AI Legislative Analyser"
 python -m venv venv
-source venv/bin/activate      # on Linux/macOS (or wsl in windows)
+source venv/bin/activate      # on Linux/macOS (or Windows Subsystem for Linux can be used)
 ```
 
 Install dependencies:

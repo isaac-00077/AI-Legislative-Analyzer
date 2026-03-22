@@ -51,5 +51,5 @@ TASK:
         text = response.choices[0].message.content or ""
         return text.strip() or None
     except Exception as exc:  # pragma: no cover
-        print("Summary generation error:", exc)
+        print("Error in Summary generation :", exc)
         return None

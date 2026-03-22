@@ -75,7 +75,7 @@ body::-webkit-scrollbar-thumb {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
-  padding: 24px 20px 40px 20px;
+  padding: 23px 20px 40px 20px;
   width: 100%;
   max-width: 1200px;
   margin: 0 auto 60px auto;
