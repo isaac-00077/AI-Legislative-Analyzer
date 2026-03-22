@@ -2,598 +2,133 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <title>Citizen Dashboard</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <style>
-      :root {
-        --bg: #0f172a;
-        --bg-card: #020617;
-        --accent: #38bdf8;
-        --accent-soft: rgba(56, 189, 248, 0.15);
-        --text: #e5e7eb;
-        --muted: #6b7280;
-        --danger: #f97373;
-      }
-
-      * {
-        box-sizing: border-box;
-      }
-
-      body {
-        margin: 0;
-        min-height: 100vh;
-        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
-          sans-serif;
-        background: radial-gradient(circle at top, #1e293b 0, #020617 55%);
-        color: var(--text);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        padding: 24px;
-      }
-
-      .shell {
-        width: 100%;
-        max-width: 1280px;
-        display: grid;
-        grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
-        gap: 28px;
-      }
-
-      @media (max-width: 900px) {
-        .shell {
-          grid-template-columns: minmax(0, 1fr);
-        }
-      }
-
-      .card {
-        background: linear-gradient(135deg, #020617, #020617 60%, #020617);
-        border-radius: 22px;
-        border: 1px solid rgba(148, 163, 184, 0.2);
-        box-shadow: 0 18px 40px rgba(15, 23, 42, 0.85);
-        padding: 28px 28px 24px;
-        position: relative;
-        overflow: hidden;
-      }
-
-      .card::before {
-        content: "";
-        position: absolute;
-        inset: -80px;
-        background: radial-gradient(
-          circle at top left,
-          rgba(56, 189, 248, 0.18),
-          transparent 60%
-        );
-        opacity: 0.55;
-        pointer-events: none;
-      }
-
-      .card-inner {
-        position: relative;
-        z-index: 1;
-      }
-
-      .badge {
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-        padding: 4px 10px;
-        border-radius: 999px;
-        background: rgba(15, 23, 42, 0.9);
-        border: 1px solid rgba(148, 163, 184, 0.45);
-        color: var(--muted);
-        font-size: 11px;
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
-      }
-
-      .badge-dot {
-        width: 6px;
-        height: 6px;
-        border-radius: 50%;
-        background: #22c55e;
-        box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.2);
-      }
-
-      h1 {
-        margin: 14px 0 4px;
-        font-size: 30px;
-        letter-spacing: 0.02em;
-      }
-
-      .subtitle {
-        margin: 0 0 20px;
-        font-size: 15px;
-        color: var(--muted);
-        line-height: 1.55;
-      }
-
-      .live-status {
-        margin: 0 0 16px;
-        padding: 10px 12px;
-        border-radius: 10px;
-        border: 1px solid rgba(148, 163, 184, 0.25);
-        background: rgba(15, 23, 42, 0.75);
-        font-size: 13px;
-        color: var(--muted);
-      }
-
-      .live-status strong {
-        color: var(--text);
-        font-weight: 600;
-      }
-
-      .bill-meta {
-        display: flex;
-        justify-content: space-between;
-        align-items: baseline;
-        margin-bottom: 12px;
-        gap: 12px;
-      }
-
-      .bill-title {
-        font-size: 24px;
-        font-weight: 600;
-      }
-
-      .bill-link {
-        font-size: 14px;
-        color: var(--accent);
-        text-decoration: none;
-        display: inline-flex;
-        align-items: center;
-        gap: 4px;
-      }
-
-      .bill-link-icon {
-        font-size: 14px;
-      }
-
-      .summary-list {
-        margin: 14px 0 0;
-        padding-left: 24px;
-        font-size: 16px;
-        line-height: 1.65;
-        color: var(--text);
-      }
-
-      .summary-list li {
-        margin-bottom: 4px;
-      }
-
-      .summary-empty {
-        font-size: 13px;
-        color: var(--muted);
-      }
-
-      .fade {
-        opacity: 0;
-        transform: translateY(6px);
-        transition: opacity 220ms ease, transform 220ms ease;
-      }
-
-      .fade.show {
-        opacity: 1;
-        transform: translateY(0);
-      }
-
-      .pill-row {
-        display: flex;
-        gap: 8px;
-        margin-top: 20px;
-        font-size: 12px;
-        color: var(--muted);
-        flex-wrap: wrap;
-      }
-
-      .pill {
-        border-radius: 999px;
-        padding: 4px 9px;
-        background: rgba(15, 23, 42, 0.9);
-        border: 1px solid rgba(148, 163, 184, 0.25);
-      }
-
-      .ask-header {
-        display: flex;
-        align-items: baseline;
-        justify-content: space-between;
-        gap: 8px;
-        margin-bottom: 10px;
-      }
-
-      .ask-title {
-        font-size: 24px;
-        font-weight: 600;
-      }
-
-      .ask-subtitle {
-        font-size: 14px;
-        color: var(--muted);
-      }
-
-      .field {
-        margin-top: 16px;
-      }
-
-      .field label {
-        display: block;
-        font-size: 13px;
-        color: var(--muted);
-        margin-bottom: 8px;
-      }
-
-      .input-row {
-        display: flex;
-        gap: 12px;
-        align-items: flex-start;
-      }
-
-      #query-input {
-        flex: 1;
-        min-height: 124px;
-        padding: 14px 16px;
-        border-radius: 14px;
-        border: 1px solid rgba(148, 163, 184, 0.35);
-        background: rgba(15, 23, 42, 0.9);
-        color: var(--text);
-        font-size: 16px;
-        line-height: 1.45;
-        outline: none;
-        resize: vertical;
-      }
-
-      #query-input:focus {
-        border-color: var(--accent);
-        box-shadow: 0 0 0 1px var(--accent-soft);
-      }
-
-      button {
-        border: none;
-        border-radius: 12px;
-        min-height: 50px;
-        padding: 0 18px;
-        font-size: 16px;
-        font-weight: 500;
-        cursor: pointer;
-        background: linear-gradient(135deg, #38bdf8, #0ea5e9);
-        color: #0b1220;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        gap: 6px;
-        box-shadow: 0 10px 25px rgba(56, 189, 248, 0.4);
-      }
-
-      button:disabled {
-        opacity: 0.6;
-        cursor: default;
-        box-shadow: none;
-      }
-
-      .answer-box {
-        margin-top: 14px;
-        padding: 14px 16px;
-        border-radius: 12px;
-        background: rgba(15, 23, 42, 0.9);
-        border: 1px solid rgba(148, 163, 184, 0.35);
-        min-height: 150px;
-        font-size: 15px;
-        line-height: 1.55;
-        white-space: pre-wrap;
-      }
-
-      @media (max-width: 900px) {
-        .card {
-          padding: 22px 18px;
-        }
-
-        h1 {
-          font-size: 25px;
-        }
-
-        .bill-title,
-        .ask-title {
-          font-size: 20px;
-        }
-
-        .input-row {
-          flex-direction: column;
-        }
-
-        button {
-          width: 100%;
-        }
-      }
-
-      .answer-meta {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-top: 6px;
-        font-size: 12px;
-        color: var(--muted);
-      }
-
-      .link-small {
-        color: var(--accent);
-        text-decoration: none;
-      }
-
-      .loading-dot {
-        display: inline-block;
-        width: 8px;
-        height: 8px;
-        border-radius: 50%;
-        background: var(--accent);
-        box-shadow: 0 0 0 0 rgba(56, 189, 248, 0.4);
-        animation: pulse 1.4s infinite;
-      }
-
-      @keyframes pulse {
-        0% {
-          transform: scale(1);
-          box-shadow: 0 0 0 0 rgba(56, 189, 248, 0.4);
-        }
-        70% {
-          transform: scale(1.5);
-          box-shadow: 0 0 0 8px rgba(56, 189, 248, 0);
-        }
-        100% {
-          transform: scale(1);
-          box-shadow: 0 0 0 0 rgba(56, 189, 248, 0);
-        }
-      }
-    </style>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Legislative AI</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/static/styles.css" />
   </head>
   <body>
-    <div class="shell">
-      <section class="card">
-        <div class="card-inner">
-          <div class="badge">
-            <span class="badge-dot"></span>
-            Live legislative dashboard
-          </div>
-          <h1>Featured Bills</h1>
-          <p class="subtitle">
-            Auto-rotating view of processed bills. Summaries are generated from
-            the underlying text.
-          </p>
+    <div class="bg-orb orb-a" aria-hidden="true"></div>
+    <div class="bg-orb orb-b" aria-hidden="true"></div>
 
-          <div id="ui-status" class="live-status">
-            <strong>Status:</strong> Initializing dashboard...
-          </div>
+    <main class="app-shell">
+      <header class="top-header">
+        <h1><span>Legislative AI</span></h1>
+      </header>
 
-          <div id="bill-card" class="fade show">
-            <div class="bill-meta">
-              <div class="bill-title" id="bill-title">Loading…</div>
+      <section class="carousel-area" aria-live="polite">
+        <button
+          type="button"
+          class="nav-arrow left"
+          id="prev-bill-btn"
+          aria-label="Previous bill"
+        >
+          <span>&larr;</span>
+        </button>
+
+        <div class="slider-viewport" id="slider-viewport">
+          <article class="bill-slide" id="bill-slide">
+            <div class="bill-head">
+              <div class="bill-counter" id="bill-counter">0 bills loaded</div>
+              <h2 id="bill-title">Loading bills...</h2>
+              <p id="bill-subtitle" class="bill-subtitle">
+                Fetching summary from /dashboard
+              </p>
+            </div>
+
+            <section class="summary-grid" id="summary-grid">
+              <article class="summary-card">
+                <div class="card-icon">🎯</div>
+                <h3>Purpose</h3>
+                <div id="purpose-text" class="summary-content">Waiting for bill data...</div>
+                <button type="button" class="view-more-btn" data-section="purpose">View More</button>
+              </article>
+
+              <article class="summary-card">
+                <div class="card-icon">🧩</div>
+                <h3>Key Points</h3>
+                <div id="keypoints-text" class="summary-content">Waiting for bill data...</div>
+                <button type="button" class="view-more-btn" data-section="keyPoints">View More</button>
+              </article>
+
+              <article class="summary-card">
+                <div class="card-icon">📊</div>
+                <h3>Impact</h3>
+                <div id="impact-text" class="summary-content">Waiting for bill data...</div>
+                <button type="button" class="view-more-btn" data-section="impact">View More</button>
+              </article>
+            </section>
+
+            <div class="bill-footer">
               <a
-                id="bill-link"
+                id="open-pdf-btn"
+                class="open-pdf-btn"
                 href="#"
                 target="_blank"
                 rel="noreferrer"
-                class="bill-link"
               >
-                <span>Open PDF</span>
-                <span class="bill-link-icon">↗</span>
+                📄 Open Full PDF
               </a>
             </div>
-
-            <ul id="bill-summary" class="summary-list"></ul>
-            <div id="bill-summary-empty" class="summary-empty" style="display:none;">
-              No summary available yet for this bill.
-            </div>
-
-            <div class="pill-row">
-              <div class="pill" id="bill-count-pill">0 bills loaded</div>
-            </div>
-          </div>
+          </article>
         </div>
+
+        <button
+          type="button"
+          class="nav-arrow right"
+          id="next-bill-btn"
+          aria-label="Next bill"
+        >
+          <span>&rarr;</span>
+        </button>
       </section>
+    </main>
 
-      <section class="card">
-        <div class="card-inner">
-          <div class="ask-header">
-            <div>
-              <div class="ask-title">Ask a question</div>
-              <div class="ask-subtitle">
-                Answers are grounded in processed bill text.
-              </div>
-            </div>
-          </div>
+    <div class="details-backdrop" id="details-backdrop" aria-hidden="true"></div>
 
-          <div class="field">
-            <label for="query-input">Your question</label>
-            <div class="input-row">
-              <textarea
-                id="query-input"
-                placeholder="e.g. What changes does the Industrial Relations Code make?"
-              ></textarea>
-              <button id="ask-btn">
-                <span>Ask</span>
-              </button>
-            </div>
-          </div>
+    <section class="details-modal" id="details-modal" aria-hidden="true" role="dialog" aria-modal="true">
+      <header class="details-header">
+        <h3 id="details-title">Details</h3>
+        <button type="button" id="details-close" class="details-close" aria-label="Close details">✕</button>
+      </header>
+      <div class="details-body" id="details-body"></div>
+    </section>
 
-          <div class="field">
-            <label>Answer</label>
-            <div id="answer-box" class="answer-box">
-              Type a question and press "Ask".
-            </div>
-            <div class="answer-meta">
-              <div id="answer-status"></div>
-              <a id="answer-pdf-link" href="#" class="link-small" target="_blank" rel="noreferrer" style="display:none;">
-                View source PDF ↗
-              </a>
-            </div>
-          </div>
-        </div>
-      </section>
+    <div class="chat-launch-wrap">
+      <button id="chat-toggle" class="chat-toggle" type="button" aria-label="Open chatbot">
+        💬 Ask about this bill
+      </button>
     </div>
 
-    <script>
-      const billCard = document.getElementById("bill-card");
-      const billTitleEl = document.getElementById("bill-title");
-      const billLinkEl = document.getElementById("bill-link");
-      const billSummaryEl = document.getElementById("bill-summary");
-      const billSummaryEmptyEl = document.getElementById("bill-summary-empty");
-      const billCountPill = document.getElementById("bill-count-pill");
-      const uiStatusEl = document.getElementById("ui-status");
+    <div class="chat-backdrop" id="chat-backdrop" aria-hidden="true"></div>
 
-      const queryInput = document.getElementById("query-input");
-      const askBtn = document.getElementById("ask-btn");
-      const answerBox = document.getElementById("answer-box");
-      const answerStatus = document.getElementById("answer-status");
-      const answerPdfLink = document.getElementById("answer-pdf-link");
+    <section class="chat-panel" id="chat-panel" aria-hidden="true">
+      <header class="chat-header">
+        <h3>AI Bill Assistant</h3>
+        <button id="chat-close" class="chat-close" type="button" aria-label="Close chatbot">✕</button>
+      </header>
 
-      let bills = [];
-      let billIndex = 0;
+      <div class="chat-messages" id="chat-messages">
+        <div class="chat-message bot">Ask any question about any bill in the system.</div>
+      </div>
 
-      function setUiStatus(text, kind = "info") {
-        uiStatusEl.innerHTML = `<strong>Status:</strong> ${text}`;
+      <form class="chat-input-row" id="chat-form">
+        <input
+          id="chat-input"
+          type="text"
+          placeholder="Type your question..."
+          autocomplete="off"
+          required
+        />
+        <button id="chat-send" type="submit">Send</button>
+      </form>
+    </section>
 
-        if (kind === "error") {
-          uiStatusEl.style.borderColor = "rgba(249, 115, 115, 0.35)";
-          uiStatusEl.style.color = "#fda4af";
-        } else {
-          uiStatusEl.style.borderColor = "rgba(148, 163, 184, 0.25)";
-          uiStatusEl.style.color = "var(--muted)";
-        }
-      }
-
-      function renderBill() {
-        if (!bills.length) {
-          billTitleEl.textContent = "No processed bills yet";
-          billSummaryEl.innerHTML = "";
-          billSummaryEmptyEl.style.display = "block";
-          billLinkEl.style.display = "none";
-          billCard.classList.add("show");
-          billCountPill.textContent = "0 bills loaded";
-          setUiStatus(
-            "No processed bills yet. Scraping/processing is likely running in the background."
-          );
-          return;
-        }
-
-        const bill = bills[billIndex % bills.length];
-        billCard.classList.remove("show");
-
-        setTimeout(() => {
-          billTitleEl.textContent = bill.title || "(Untitled bill)";
-          billLinkEl.href = bill.pdf_url || "#";
-          billLinkEl.style.display = bill.pdf_url ? "inline-flex" : "none";
-
-          billSummaryEl.innerHTML = "";
-
-          if (bill.summary) {
-            billSummaryEmptyEl.style.display = "none";
-
-            const lines = bill.summary
-              .split(/\r?\n/)
-              .map((l) => l.trim())
-              .filter((l) => l);
-
-            for (const line of lines) {
-              const li = document.createElement("li");
-              li.textContent = line.replace(/^[-•]\s*/, "");
-              billSummaryEl.appendChild(li);
-            }
-          } else {
-            billSummaryEmptyEl.style.display = "block";
-          }
-
-          billCountPill.textContent = `${bills.length} bill${
-            bills.length === 1 ? "" : "s"
-          } loaded`;
-
-          setUiStatus(
-            `Showing bill ${billIndex + 1} of ${bills.length}. Auto-refresh every 30 seconds.`
-          );
-
-          billCard.classList.add("show");
-        }, 180);
-      }
-
-      async function refreshBills() {
-        setUiStatus("Refreshing latest processed bills...");
-        try {
-          const res = await fetch("/dashboard");
-          if (!res.ok) throw new Error("Dashboard fetch failed");
-          const data = await res.json();
-
-          if (!Array.isArray(data)) {
-            throw new Error("Unexpected dashboard response");
-          }
-
-          bills = data;
-          if (billIndex >= bills.length) billIndex = 0;
-          renderBill();
-        } catch (err) {
-          console.error(err);
-          setUiStatus(
-            "Could not refresh dashboard right now. Retrying automatically...",
-            "error"
-          );
-        }
-      }
-
-      setInterval(() => {
-        if (bills.length) {
-          billIndex = (billIndex + 1) % bills.length;
-          renderBill();
-        }
-        refreshBills();
-      }, 30000);
-
-      refreshBills().then(renderBill);
-
-      async function submitQuestion() {
-        const q = queryInput.value.trim();
-        if (!q) return;
-
-        askBtn.disabled = true;
-        answerPdfLink.style.display = "none";
-        answerStatus.innerHTML =
-          '<span class="loading-dot"></span> Thinking…';
-        answerBox.textContent = "";
-        setUiStatus(
-          "Answering your question. If we need to download and process a new bill, this may take up to a minute..."
-        );
-
-        try {
-          const res = await fetch(`/ask?query=${encodeURIComponent(q)}`);
-          if (!res.ok) throw new Error("Ask API failed");
-          const data = await res.json();
-
-          answerBox.textContent = data.answer || "No answer returned.";
-          answerStatus.textContent = "";
-          setUiStatus("Answer ready.");
-
-          if (data.pdf_url) {
-            answerPdfLink.href = data.pdf_url;
-            answerPdfLink.style.display = "inline";
-          } else {
-            answerPdfLink.style.display = "none";
-          }
-        } catch (err) {
-          console.error(err);
-          answerBox.textContent =
-            "An error occurred while answering your question. Please try again.";
-          answerStatus.innerHTML =
-            '<span style="color: var(--danger);">Error</span>';
-          setUiStatus("Ask request failed. Please try again.", "error");
-        } finally {
-          askBtn.disabled = false;
-        }
-      }
-
-      askBtn.addEventListener("click", submitQuestion);
-      queryInput.addEventListener("keydown", (e) => {
-        if (e.key === "Enter" && !e.shiftKey) {
-          e.preventDefault();
-          submitQuestion();
-        }
-      });
-    </script>
+    <script src="/static/script.js"></script>
   </body>
-  </html>
+</html>

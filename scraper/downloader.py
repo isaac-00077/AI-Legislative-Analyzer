@@ -11,12 +11,12 @@ HEADERS = {
 
 def download_pdf(url):
     try:
-        # ✅ safer filename (decode %20 etc)
+        
         filename = unquote(url.split("/")[-1]).replace("/", "_")
         path = SAVE_DIR / filename
 
         if path.exists():
-            print("⚡ Already exists:", filename)
+            print(" Already exists:", filename)
             return str(path)
 
         print("⬇️ Downloading:", url)

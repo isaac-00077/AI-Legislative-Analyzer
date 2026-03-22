@@ -14,12 +14,12 @@ class Bill(Base):
     local_path = Column(String)
     processed = Column(Boolean, default=False)
 
-    # Embedding of the bill title for semantic title search
+ 
     title_embedding = Column(Vector(384))
 
-    # 🔥 NEW: relationship
+    
     chunks = relationship("Chunk", back_populates="bill")
-    # Short human-readable summary for dashboard
+    
     summary = Column(Text)
 
 
@@ -33,7 +33,7 @@ class Chunk(Base):
     original_text = Column(Text)
     compressed_text = Column(Text)
 
-    # 🔥 EMBEDDING (MiniLM = 384 dim)
+    
     embedding = Column(Vector(384))
 
     bill = relationship("Bill", back_populates="chunks")

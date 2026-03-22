@@ -32,13 +32,13 @@ def get_pdf_links(num_bill_links=5, initial=True):
                 if initial and len(bill_links) >= num_bill_links:
                     break
 
-        print(f"\n📄 Found {len(bill_links)} bill links\n")
+        print(f"\nFound {len(bill_links)} bill links\n")
 
         results = []
         total = len(bill_links)
 
         for i, bill_url in enumerate(bill_links, start=1):
-            print(f"[{i}/{total}] 🔗 Visiting: {bill_url}")
+            print(f"[{i}/{total}] Visiting: {bill_url}")
 
             try:
                 bill_res = requests.get(bill_url, headers=HEADERS)

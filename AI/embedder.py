@@ -1,7 +1,28 @@
-from sentence_transformers import SentenceTransformer
+import threading
 
-# 🔥 Load model ONCE (important)
-model = SentenceTransformer("all-MiniLM-L6-v2")
+
+# Lazily loaded global model instance so that importing this module
+# does not block app startup. Both the heavy library import and the
+# model construction happen only on first use.
+_model = None
+_model_lock = threading.Lock()
+
+
+def _get_model():
+    global _model
+
+    # Fast path without acquiring the lock when the model is ready.
+    if _model is not None:
+        return _model
+
+    with _model_lock:
+        if _model is None:
+            # Local import so that uvicorn startup does not pay the
+            # cost of loading sentence_transformers and its deps.
+            from sentence_transformers import SentenceTransformer
+
+            _model = SentenceTransformer("all-MiniLM-L6-v2")
+        return _model
 
 
 def get_embedding(text: str):
@@ -9,6 +30,7 @@ def get_embedding(text: str):
         if not text or not text.strip():
             return None
 
+        model = _get_model()
         embedding = model.encode(text)
 
         # convert numpy → list (pgvector accepts list)
