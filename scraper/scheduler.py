@@ -18,7 +18,7 @@ def process_new_pdfs(initial: bool = False) -> None:
 
     db = SessionLocal()
     # Always scan the full bill listing so we don't miss new PDFs.
-    links = get_pdf_links(initial=False)
+    links = get_pdf_links(num_bill_links=50, initial=False)
 
     try:
         for item in links:

@@ -42,7 +42,7 @@ def start_app() -> None:
 
         try:
             # 🟢 Step 1: ingest ALL current PDF links into the DB
-            process_new_pdfs(initial=True)
+            process_new_pdfs(initial=False)
 
             # 🟢 Step 2: download + process PDFs from FIRST 5 bill pages
             priority_items = get_pdf_links(num_bill_links=5, initial=True)
