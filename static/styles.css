@@ -627,7 +627,12 @@ body::-webkit-scrollbar-thumb {
   }
 
   .chat-panel {
+    right: 10px;
     width: min(96vw, 390px);
     height: min(70vh, 520px);
+  }
+
+  .chat-launch-wrap {
+    right: 10px;
   }
 }
