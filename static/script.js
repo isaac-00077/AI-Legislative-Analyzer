@@ -19,7 +19,6 @@ const API_BASE = window.location.hostname.endsWith("vercel.app")
 const billSlideEl = document.getElementById("bill-slide");
 const billCounterEl = document.getElementById("bill-counter");
 const billTitleEl = document.getElementById("bill-title");
-const billSubtitleEl = document.getElementById("bill-subtitle");
 const purposeTextEl = document.getElementById("purpose-text");
 const keyPointsTextEl = document.getElementById("keypoints-text");
 const impactTextEl = document.getElementById("impact-text");
@@ -368,7 +367,6 @@ function renderCurrentBill() {
   if (!bills.length) {
     billCounterEl.textContent = "0 bills loaded";
     billTitleEl.textContent = "No bills loaded yet";
-    billSubtitleEl.textContent = "Waiting for /dashboard data";
     purposeTextEl.innerHTML = "<ul><li>No summary available for this bill yet.</li></ul>";
     keyPointsTextEl.innerHTML = "<ul><li>No key points found.</li></ul>";
     impactTextEl.innerHTML = "<ul><li>No impact details available.</li></ul>";
@@ -390,7 +388,6 @@ function renderCurrentBill() {
   billCounterEl.textContent = `${bills.length} bill${bills.length === 1 ? "" : "s"} loaded`;
   billTitleEl.textContent = displayTitle;
   billTitleEl.title = titleParts.mainTitle;
-  billSubtitleEl.textContent = titleParts.subtitle || summaryParts.subtitle;
 
   purposeTextEl.innerHTML = formatCardContent(summaryParts.purpose);
   keyPointsTextEl.innerHTML = formatCardContent(summaryParts.keyPoints);
@@ -487,7 +484,6 @@ async function fetchBills() {
     renderCurrentBill();
   } catch (error) {
     console.error(error);
-    billSubtitleEl.textContent = "Could not load dashboard data. Retrying soon.";
   }
 }
 function formatBotAnswerText(rawText) {
