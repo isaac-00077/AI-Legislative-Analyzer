@@ -13,7 +13,7 @@ const BILL_TRANSITION_MS = 360;
 // end with "vercel.app" and route calls to the Render API; otherwise
 // we default to same-origin.
 const API_BASE = window.location.hostname.endsWith("vercel.app")
-  ? "https://YOUR_RENDER_BACKEND_URL_HERE"
+  ? "https://ai-legislative-analyzer-81x2.onrender.com"
   : "";
 
 const billSlideEl = document.getElementById("bill-slide");
