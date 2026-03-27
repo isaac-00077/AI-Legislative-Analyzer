@@ -6,20 +6,20 @@ from AI.embedder import get_embedding
 import time
 
 
-def process_new_pdfs(initial: bool = False) -> None:
-    """Ingest all known PDF links into the Bills table.
+def process_new_pdfs(max_bill_pages: int = 50, source: str = "scheduler") -> None:
+    """Ingest newly discovered PDF links into the Bills table.
 
-    - On initial startup, this seeds the DB with every current PDF link.
-    - On scheduler runs, this only inserts links for newly appeared PDFs.
+    - `max_bill_pages` controls how many recent bill pages to inspect.
+    - Existing PDFs are skipped by unique `pdf_url` lookup.
     - Heavy work (download + processing) is handled separately.
     """
 
-    print("\n🔥 MODE:", "INITIAL" if initial else "SCHEDULER")
+    print(f"\n🔥 MODE: {source.upper()} | max_bill_pages={max_bill_pages}")
+
 
     db = SessionLocal()
-    # Always scan the full bill listing so we don't miss new PDFs.
-    links = get_pdf_links(num_bill_links=50, initial=False)
-
+    links = get_pdf_links(max_bill_pages=max_bill_pages)
+ 
     try:
         for item in links:
             link = item["pdf_url"]
@@ -61,4 +61,5 @@ def run_scheduler(interval_seconds: int = 43200) -> None:
         time.sleep(interval_seconds)
 
         print("\n⏱️ Checking for new PDFs...")
-        process_new_pdfs(initial=False)
+        # Keep scheduler runs bounded to recent bill pages for reliability.
+        process_new_pdfs(max_bill_pages=50, source="scheduler")

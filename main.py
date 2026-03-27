@@ -41,11 +41,11 @@ def start_app() -> None:
         """Run heavy initialization work without blocking API startup."""
 
         try:
-            # 🟢 Step 1: ingest ALL current PDF links into the DB
-            process_new_pdfs(initial=False)
+            # 🟢 Step 1: ingest only recent bill pages to keep startup light
+            process_new_pdfs(max_bill_pages=15, source="startup")
 
             # 🟢 Step 2: download + process PDFs from FIRST 5 bill pages
-            priority_items = get_pdf_links(num_bill_links=5, initial=True)
+            priority_items = get_pdf_links(max_bill_pages=5)
             priority_urls = {item["pdf_url"] for item in priority_items}
 
             if priority_urls:
@@ -292,7 +292,8 @@ def fetch_bill(query: str):
 
         # Step 2: not in DB → search source site for a matching PDF
         print("🔎 Bill not in DB, scanning source site...")
-        links = get_pdf_links(initial=False)
+        # Keep live query scraping bounded to recent listings.
+        links = get_pdf_links(max_bill_pages=50)
 
         for item in links:
             title = item["title"] or ""
