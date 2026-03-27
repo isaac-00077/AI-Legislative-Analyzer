@@ -375,6 +375,7 @@ function renderCurrentBill() {
   }
 
   const bill = bills[currentBillIndex];
+  activeChatPdfUrl = bill.pdf_url || null;
   const titleParts = cleanBillTitle(bill.title);
   const summaryParts = splitSummaryToThreeParts(bill.summary);
   currentSummaryParts = summaryParts;
@@ -548,6 +549,9 @@ function openChat() {
 }
 
 function closeChat() {
+  if (chatPanelEl.contains(document.activeElement)) {
+    chatToggleEl.focus();
+  }
   chatBackdropEl.classList.remove("open");
   chatBackdropEl.setAttribute("aria-hidden", "true");
   chatPanelEl.classList.remove("open");
