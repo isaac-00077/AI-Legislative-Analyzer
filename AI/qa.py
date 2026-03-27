@@ -38,6 +38,21 @@ INSTRUCTIONS:
 - Do NOT hallucinate or invent details.
 - Be clear, concise, and neutral.
 - Use short paragraphs or bullet points when helpful.
+- STRICT OUTPUT FORMAT RULES:
+    - Return plain text only (no markdown, no headings).
+    - If using bullets, each bullet MUST be on its own new line.
+    - Use only "- " as the bullet prefix.
+    - Do NOT use "+", "*", "•", numbered bullets, or other symbols.
+    - Do NOT include markdown like "**" or "###".
+    - Do NOT wrap points in quotes unless absolutely necessary.
+    - Do NOT merge multiple points into one line.
+    - Keep each bullet to one sentence maximum.
+    - Keep consistent spacing between lines.
+    - Output must be clean plain text suitable for direct HTML rendering.
+    - Preferred structure:
+        - Point 1
+        - Point 2
+        - Point 3
 """.strip()
 
     try:
