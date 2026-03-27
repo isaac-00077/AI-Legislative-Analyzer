@@ -52,6 +52,10 @@ def _lexical_score(query: str, candidate: str) -> float:
     # Bias toward recall of query tokens for user-entered phrases.
     return overlap / len(q_tokens)
 
+
+def _bill_has_chunks(db, bill_id: int) -> bool:
+    return db.query(Chunk.id).filter(Chunk.bill_id == bill_id).first() is not None
+
 # Allow the frontend (e.g. Vercel) to call this API.
 # You can tighten allow_origins later to just your Vercel URL.
 app.add_middleware(
@@ -303,7 +307,8 @@ def fetch_bill(query: str):
                 db.commit()
 
             # 🔴 Lazy processing
-            if not bill.processed:
+            has_chunks = _bill_has_chunks(db, bill.id)
+            if not bill.processed or not has_chunks:
                 print("⚙️ Lazy processing...")
 
                 original_chunks, compressed_chunks = process_pdf_to_chunks(bill.local_path)
@@ -473,6 +478,58 @@ def ask(query: str, pdf_url: str | None = None):
                     "pdf_url": pdf_url,
                 }
 
+        # For explicit bill-name queries, prefer lexical title match first.
+        if target_bill is None:
+            lexical_best_bill: Bill | None = None
+            lexical_best_score = 0.0
+            for bill in db.query(Bill).all():
+                score = max(
+                    _lexical_score(query, bill.title or ""),
+                    _lexical_score(query, bill.pdf_url or ""),
+                )
+                if score > lexical_best_score:
+                    lexical_best_score = score
+                    lexical_best_bill = bill
+
+            if lexical_best_bill is not None and lexical_best_score >= 0.4:
+                print(f"🔎 ask() lexical bill match={lexical_best_score:.2f}:", lexical_best_bill.title)
+                target_bill = lexical_best_bill
+
+                if not target_bill.local_path:
+                    print("⬇️ ask() downloading matched bill...")
+                    path = download_pdf(target_bill.pdf_url)
+                    if path:
+                        target_bill.local_path = path
+                        db.commit()
+
+                has_chunks = _bill_has_chunks(db, target_bill.id)
+                if target_bill.local_path and (not target_bill.processed or not has_chunks):
+                    print("⚙️ ask() processing matched bill...")
+                    original_chunks, compressed_chunks = process_pdf_to_chunks(target_bill.local_path)
+
+                    if target_bill.summary is None and compressed_chunks:
+                        summary = generate_summary(compressed_chunks)
+                        if summary:
+                            target_bill.summary = summary
+
+                    if original_chunks:
+                        for orig, comp in zip(original_chunks, compressed_chunks):
+                            embedding = get_embedding(comp)
+                            db.add(
+                                Chunk(
+                                    bill_id=target_bill.id,
+                                    original_text=orig,
+                                    compressed_text=comp,
+                                    embedding=embedding,
+                                )
+                            )
+
+                        target_bill.processed = True
+                        db.commit()
+
+                db.expire_all()
+                target_bill = db.query(Bill).filter(Bill.id == target_bill.id).first()
+
         query_embedding = get_embedding(query)
         # If embeddings are temporarily unavailable on the host,
         # fall back to bill-level retrieval instead of hard-failing.
@@ -491,6 +548,37 @@ def ask(query: str, pdf_url: str | None = None):
                 if context_chunks:
                     answer = answer_question(query, context_chunks)
                     return {"answer": answer, "pdf_url": target_bill.pdf_url}
+
+                # Bill exists but has no chunks yet: trigger one direct processing attempt.
+                has_chunks = _bill_has_chunks(db, target_bill.id)
+                if target_bill.local_path and not has_chunks:
+                    print("⚙️ ask() no chunks found; processing matched bill directly...")
+                    original_chunks, compressed_chunks = process_pdf_to_chunks(target_bill.local_path)
+                    if original_chunks:
+                        for orig, comp in zip(original_chunks, compressed_chunks):
+                            embedding = get_embedding(comp)
+                            db.add(
+                                Chunk(
+                                    bill_id=target_bill.id,
+                                    original_text=orig,
+                                    compressed_text=comp,
+                                    embedding=embedding,
+                                )
+                            )
+                        target_bill.processed = True
+                        db.commit()
+
+                    fallback_chunks = (
+                        db.query(Chunk)
+                        .filter(Chunk.bill_id == target_bill.id)
+                        .order_by(Chunk.id.asc())
+                        .limit(3)
+                        .all()
+                    )
+                    context_chunks = [c.original_text for c in fallback_chunks if c.original_text]
+                    if context_chunks:
+                        answer = answer_question(query, context_chunks)
+                        return {"answer": answer, "pdf_url": target_bill.pdf_url}
 
             fetch_result = fetch_bill(query)
             pdf_url = fetch_result.get("pdf_url") if isinstance(fetch_result, dict) else None
