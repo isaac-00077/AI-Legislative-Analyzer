@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
+from fastapi.middleware.cors import CORSMiddleware
 import threading
 import math
 from typing import List
@@ -17,6 +18,16 @@ from AI.summarizer import generate_summary
 from AI.qa import answer_question
 
 app = FastAPI()
+
+# Allow the frontend (e.g. Vercel) to call this API.
+# You can tighten allow_origins later to just your Vercel URL.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # ✅ create tables
 Base.metadata.create_all(bind=engine)

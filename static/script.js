@@ -1,6 +1,21 @@
 const AUTO_SLIDE_MS = 30000;
 const BILL_TRANSITION_MS = 360;
 
+// Backend API base URL. In local development where the frontend and
+// backend are served from the same origin, leave this as an empty
+// string so relative paths like "/dashboard" are used. In
+// production (e.g. Vercel frontend + Render backend), set this to
+// your Render URL, for example:
+// const API_BASE = "https://your-backend.onrender.com";
+//
+// To make this file safe to push before you know the URL, we use a
+// small heuristic: when running on Vercel we expect the hostname to
+// end with "vercel.app" and route calls to the Render API; otherwise
+// we default to same-origin.
+const API_BASE = window.location.hostname.endsWith("vercel.app")
+  ? "https://YOUR_RENDER_BACKEND_URL_HERE"
+  : "";
+
 const billSlideEl = document.getElementById("bill-slide");
 const billCounterEl = document.getElementById("bill-counter");
 const billTitleEl = document.getElementById("bill-title");
@@ -443,7 +458,7 @@ function pauseAutoSlideByUser() {
 
 async function fetchBills() {
   try {
-    const response = await fetch("/dashboard");
+    const response = await fetch(`${API_BASE}/dashboard`);
     if (!response.ok) {
       throw new Error(`Dashboard request failed: ${response.status}`);
     }
@@ -564,7 +579,7 @@ async function submitChatQuestion(event) {
   chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
 
   try {
-    let url = `/ask?query=${encodeURIComponent(query)}`;
+    let url = `${API_BASE}/ask?query=${encodeURIComponent(query)}`;
     if (activeChatPdfUrl) {
       url += `&pdf_url=${encodeURIComponent(activeChatPdfUrl)}`;
     }
