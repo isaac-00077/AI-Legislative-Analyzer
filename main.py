@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from fastapi import Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -114,6 +115,12 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 @app.get("/")
 def home() -> FileResponse:
     return FileResponse("static/index.html")
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+def favicon() -> Response:
+    # Quiet browser favicon probing when no icon file is shipped.
+    return Response(status_code=204)
 
 
 @app.get("/fetch-bill/{query}")
@@ -393,9 +400,45 @@ def ask(query: str):
 
     try:
         query_embedding = get_embedding(query)
-        # Explicitly check for None to avoid ambiguous truth-value on arrays
+        # If embeddings are temporarily unavailable on the host,
+        # fall back to bill-level retrieval instead of hard-failing.
         if query_embedding is None:
-            return {"answer": "Could not create embedding for your query."}
+            print("🟡 Query embedding unavailable; falling back to bill-level retrieval")
+
+            fetch_result = fetch_bill(query)
+            pdf_url = fetch_result.get("pdf_url") if isinstance(fetch_result, dict) else None
+
+            if not pdf_url:
+                return {
+                    "answer": "I could not find a closely related bill yet. Please try a more specific bill name.",
+                    "pdf_url": None,
+                }
+
+            bill = db.query(Bill).filter(Bill.pdf_url == pdf_url, Bill.processed.is_(True)).first()
+            if not bill:
+                return {
+                    "answer": "I found a related bill and started processing it. Please try again shortly.",
+                    "pdf_url": pdf_url,
+                }
+
+            # Use first chunks as deterministic fallback context.
+            fallback_chunks = (
+                db.query(Chunk)
+                .filter(Chunk.bill_id == bill.id)
+                .order_by(Chunk.id.asc())
+                .limit(3)
+                .all()
+            )
+            context_chunks = [c.original_text for c in fallback_chunks if c.original_text]
+
+            if not context_chunks:
+                return {
+                    "answer": "I found the bill but could not extract enough text to answer yet.",
+                    "pdf_url": pdf_url,
+                }
+
+            answer = answer_question(query, context_chunks)
+            return {"answer": answer, "pdf_url": pdf_url}
 
         # Use chunk embeddings for similarity, but only from processed bills
         chunks = db.query(Chunk).join(Bill).filter(Bill.processed.is_(True)).all()
