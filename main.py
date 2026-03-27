@@ -111,9 +111,8 @@ def start_app() -> None:
                             if original_chunks:
                                 for orig, comp in zip(original_chunks, compressed_chunks):
                                     embedding = get_embedding(comp)
-                                    if embedding is None:
-                                        continue
-
+                                    # Store chunks even if embedding is None; text-based retrieval
+                                    # will still work for answering.
                                     db.add(
                                         Chunk(
                                             bill_id=bill.id,
@@ -317,9 +316,8 @@ def fetch_bill(query: str):
                 if original_chunks:
                     for orig, comp in zip(original_chunks, compressed_chunks):
                         embedding = get_embedding(comp)
-                        if embedding is None:
-                            continue
-
+                        # Store chunks even if embedding is None; text-based retrieval
+                        # will still work for answering.
                         db.add(
                             Chunk(
                                 bill_id=bill.id,
@@ -395,9 +393,8 @@ def fetch_bill(query: str):
                 if original_chunks:
                     for orig, comp in zip(original_chunks, compressed_chunks):
                         embedding = get_embedding(comp)
-                        if embedding is None:
-                            continue
-
+                        # Store chunks even if embedding is None; text-based retrieval
+                        # will still work for answering.
                         db.add(
                             Chunk(
                                 bill_id=bill.id,
@@ -606,6 +603,20 @@ def ask(query: str, pdf_url: str | None = None):
                 scored.append((score, chunk))
 
             if not scored:
+                # No scored chunks (all embeddings were None), fall back to first chunks by order.
+                print("🟡 No embeddings available; falling back to first chunks by order...")
+                fallback = (
+                    db.query(Chunk)
+                    .filter(Chunk.bill_id == bill.id)
+                    .order_by(Chunk.id.asc())
+                    .limit(3)
+                    .all()
+                )
+                context_chunks = [c.original_text for c in fallback if c.original_text]
+                if context_chunks:
+                    answer = answer_question(query, context_chunks)
+                    return {"answer": answer, "pdf_url": pdf_url}
+
                 return {
                     "answer": "I processed a matching bill but could not extract enough relevant content to answer this question.",
                     "pdf_url": pdf_url,
