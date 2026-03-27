@@ -14,7 +14,7 @@ def process_new_pdfs(initial: bool = False) -> None:
     - Heavy work (download + processing) is handled separately.
     """
 
-    print("\nMODE:", "INITIAL" if initial else "SCHEDULER")
+    print("\n🔥 MODE:", "INITIAL" if initial else "SCHEDULER")
 
     db = SessionLocal()
     # Always scan the full bill listing so we don't miss new PDFs.
@@ -57,8 +57,8 @@ def run_scheduler(interval_seconds: int = 43200) -> None:
     while True:
         # Sleep *before* each scheduler run so that, after the initial
         # startup seeding, we wait the full interval before re-scanning.
-        print(f"\n Scheduler sleeping for {interval_seconds} seconds (~{interval_seconds / 3600:.1f} hours) before next check...")
+        print(f"\n⏱️ Scheduler sleeping for {interval_seconds} seconds (~{interval_seconds / 3600:.1f} hours) before next check...")
         time.sleep(interval_seconds)
 
-        print("\nChecking for new PDFs...")
+        print("\n⏱️ Checking for new PDFs...")
         process_new_pdfs(initial=False)
