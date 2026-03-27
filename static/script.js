@@ -50,6 +50,23 @@ let isAnimating = false;
 let currentSummaryParts = null;
 let activeChatPdfUrl = null;
 
+function shouldScopeToActiveBill(query) {
+  const q = String(query || "").trim().toLowerCase();
+  if (!q) {
+    return false;
+  }
+
+  // If user clearly names another bill/topic, run global search.
+  const explicitBillSignal =
+    /\b(tell me about|what is|details of|about)\b/.test(q) && q.length > 18;
+  if (explicitBillSignal) {
+    return false;
+  }
+
+  // Keep follow-ups pinned to currently shown bill.
+  return /\b(this bill|this act|this law|it|its|explain|clarify|summarize|key points|impact|purpose|what does this mean|in simple words)\b/.test(q);
+}
+
 function normalizeLineText(line) {
   return String(line || "")
     .replace(/^[-*\u2022]\s*/, "")
@@ -580,7 +597,7 @@ async function submitChatQuestion(event) {
 
   try {
     let url = `${API_BASE}/ask?query=${encodeURIComponent(query)}`;
-    if (activeChatPdfUrl) {
+    if (activeChatPdfUrl && shouldScopeToActiveBill(query)) {
       url += `&pdf_url=${encodeURIComponent(activeChatPdfUrl)}`;
     }
 

@@ -355,67 +355,67 @@ def fetch_bill(query: str):
                 source_best_score = score
                 source_best = item
 
-            if source_best is not None and source_best_score >= 0.4:
-                title = source_best["title"] or ""
-                pdf_url = source_best["pdf_url"]
-                print("✅ Match found on source:", title)
+        if source_best is not None and source_best_score >= 0.4:
+            title = source_best["title"] or ""
+            pdf_url = source_best["pdf_url"]
+            print("✅ Match found on source:", title)
 
-                bill = db.query(Bill).filter_by(pdf_url=pdf_url).first()
-                if not bill:
-                    bill = Bill(
-                        title=title,
-                        pdf_url=pdf_url,
-                        local_path=None,
-                        processed=False,
-                    )
-                    db.add(bill)
-                    db.commit()
-                    db.refresh(bill)
+            bill = db.query(Bill).filter_by(pdf_url=pdf_url).first()
+            if not bill:
+                bill = Bill(
+                    title=title,
+                    pdf_url=pdf_url,
+                    local_path=None,
+                    processed=False,
+                )
+                db.add(bill)
+                db.commit()
+                db.refresh(bill)
 
-                # On-demand download
-                if not bill.local_path:
-                    print("⬇️ On-demand downloading...")
-                    path = download_pdf(bill.pdf_url)
-                    if not path:
-                        return {"message": "Failed to download PDF from source"}
-                    bill.local_path = path
-                    db.commit()
+            # On-demand download
+            if not bill.local_path:
+                print("⬇️ On-demand downloading...")
+                path = download_pdf(bill.pdf_url)
+                if not path:
+                    return {"message": "Failed to download PDF from source"}
+                bill.local_path = path
+                db.commit()
 
-                # On-demand processing
-                if not bill.processed:
-                    print("⚙️ On-demand processing...")
+            # On-demand processing
+            if not bill.processed:
+                print("⚙️ On-demand processing...")
 
-                    original_chunks, compressed_chunks = process_pdf_to_chunks(bill.local_path)
+                original_chunks, compressed_chunks = process_pdf_to_chunks(bill.local_path)
 
-                    if bill.summary is None and compressed_chunks:
-                        summary = generate_summary(compressed_chunks)
-                        if summary:
-                            bill.summary = summary
+                if bill.summary is None and compressed_chunks:
+                    summary = generate_summary(compressed_chunks)
+                    if summary:
+                        bill.summary = summary
 
-                    if original_chunks:
-                        for orig, comp in zip(original_chunks, compressed_chunks):
-                            embedding = get_embedding(comp)
-                            if embedding is None:
-                                continue
+                if original_chunks:
+                    for orig, comp in zip(original_chunks, compressed_chunks):
+                        embedding = get_embedding(comp)
+                        if embedding is None:
+                            continue
 
-                            db.add(
-                                Chunk(
-                                    bill_id=bill.id,
-                                    original_text=orig,
-                                    compressed_text=comp,
-                                    embedding=embedding,
-                                )
+                        db.add(
+                            Chunk(
+                                bill_id=bill.id,
+                                original_text=orig,
+                                compressed_text=comp,
+                                embedding=embedding,
                             )
+                        )
 
-                        bill.processed = True
-                        db.commit()
+                    bill.processed = True
+                    db.commit()
 
-                return {
-                    "message": "Bill ready (fetched from source)",
-                    "pdf_url": bill.pdf_url,
-                    "local_path": bill.local_path,
-                    "processed": bill.processed,
-                }
+            return {
+                "message": "Bill ready (fetched from source)",
+                "pdf_url": bill.pdf_url,
+                "local_path": bill.local_path,
+                "processed": bill.processed,
+            }
 
         return {"message": "Bill not found"}
 
