@@ -34,6 +34,8 @@ def _get_model():
             # Local import so that uvicorn startup does not pay the
             # cost of loading sentence_transformers and its deps.
             try:
+                import torch
+                import torch.nn as nn
                 from sentence_transformers import SentenceTransformer
 
                 print("Loading embedding model: all-MiniLM-L6-v2")
