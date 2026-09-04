@@ -147,7 +147,7 @@ def start_app() -> None:
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 
-@app.get("/")
+@app.api_route("/", methods=["GET", "HEAD"])
 def home() -> FileResponse:
     return FileResponse("static/index.html")
 

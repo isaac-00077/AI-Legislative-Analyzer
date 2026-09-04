@@ -1,5 +1,18 @@
+import sys
 import threading
 import traceback
+
+# Ensure stdout/stderr handle UTF-8 on Windows consoles
+if sys.stdout and hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+if sys.stderr and hasattr(sys.stderr, "reconfigure"):
+    try:
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
 
 
 # Lazily loaded global model instance so that importing this module
@@ -23,11 +36,11 @@ def _get_model():
             try:
                 from sentence_transformers import SentenceTransformer
 
-                print("🧠 Loading embedding model: all-MiniLM-L6-v2")
+                print("Loading embedding model: all-MiniLM-L6-v2")
                 _model = SentenceTransformer("all-MiniLM-L6-v2")
-                print("✅ Embedding model loaded")
+                print("Embedding model loaded successfully")
             except Exception as exc:
-                print("❌ Failed to load embedding model:", exc)
+                print("Failed to load embedding model:", exc)
                 traceback.print_exc()
                 raise
         return _model

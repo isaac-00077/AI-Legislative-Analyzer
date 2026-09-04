@@ -7,7 +7,7 @@ The stack includes:
 - **FastAPI** backend (REST + static frontend)
 - **PostgreSQL + SQLAlchemy + pgvector** for bill/chunk storage and semantic search
 - **SentenceTransformer (all-MiniLM-L6-v2)** for embeddings
-- **Groq LLM (llama-3.1-8b-instant)** for chunk compression, summaries, and Q&A
+- **Groq LLM (openai/gpt-oss-20b)** for chunk compression, summaries, and Q&A
 - **BeautifulSoup + requests** for scraping PRS India
 - **Static HTML/CSS/JS** dashboard UI with a carousel and chatbot
 
@@ -78,7 +78,7 @@ The stack includes:
 This project is designed around **token compression** so it can safely handle legislative PDFs that expand well beyond **100k tokens** once converted to text, while still giving the LLM a compact, high‑value prompt.
 
 - **Chunking for very long documents** – Raw PDF text is first split into sentence‑aware word chunks of ~180 tokens with overlap, allowing arbitrarily long bills to be processed incrementally instead of as a single huge prompt.
-- **LLM-based compression (`AI/compressor.py`)** – Each original chunk is compressed by Groq (llama‑3.1‑8b‑instant) into **3–6 bullet points**, explicitly targeting **40–60% fewer tokens** per chunk while preserving all legal facts (sections, dates, actors, effects). Missing chunks automatically fall back to the original text so coverage is never lost.
+- **LLM-based compression (`AI/compressor.py`)** – Each original chunk is compressed by Groq (openai/gpt-oss-20b) into **3–6 bullet points**, explicitly targeting **40–60% fewer tokens** per chunk while preserving all legal facts (sections, dates, actors, effects). Missing chunks automatically fall back to the original text so coverage is never lost.
 - **High-density embeddings** – Embeddings are computed on the **compressed** chunks, not the raw text, so each 384‑dimensional vector represents a more information‑dense view of the bill, improving retrieval quality per token stored.
 - **Dashboard summaries** – Bill‑level summaries are generated from only a small head of compressed chunks, turning tens of thousands of tokens into a short, human‑readable card layout (Purpose / Key Points / Impact) while keeping the full compressed context available for Q&A.
 - **Energy / carbon impact** – Because the LLM primarily sees compressed bullets (and only the top‑similar chunks per query), the system answers questions using a **tiny fraction of the original token count**. This directly improves the _information‑per‑token_ metric that the competition optimizes for.
