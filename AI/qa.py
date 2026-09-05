@@ -57,7 +57,7 @@ INSTRUCTIONS:
 
     try:
         response = _client.chat.completions.create(
-            model="openai/gpt-oss-20b",
+            model="llama-3.3-70b-versatile",
             max_tokens=512,
             temperature=0.2,
             messages=[

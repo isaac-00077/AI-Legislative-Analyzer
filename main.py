@@ -453,32 +453,12 @@ def ask(query: str, pdf_url: str | None = None):
 
     try:
         target_bill: Bill | None = None
+
+        # 1. Direct PDF URL match if provided by frontend
         if pdf_url:
             target_bill = db.query(Bill).filter(Bill.pdf_url == pdf_url).first()
 
-            if target_bill is None:
-                return {
-                    "answer": "I could not find that bill in the database yet.",
-                    "pdf_url": pdf_url,
-                }
-
-            if not target_bill.processed:
-                seed_query = target_bill.title or target_bill.pdf_url
-                fetch_bill(seed_query)
-                db.expire_all()
-                target_bill = (
-                    db.query(Bill)
-                    .filter(Bill.pdf_url == pdf_url, Bill.processed.is_(True))
-                    .first()
-                )
-
-            if target_bill is None:
-                return {
-                    "answer": "I found the bill and started processing it. Please try again shortly.",
-                    "pdf_url": pdf_url,
-                }
-
-        # For explicit bill-name queries, prefer lexical title match first.
+        # 2. If no target_bill yet, attempt lexical/semantic match against existing bills in DB
         if target_bill is None:
             lexical_best_bill: Bill | None = None
             lexical_best_score = 0.0
@@ -491,10 +471,16 @@ def ask(query: str, pdf_url: str | None = None):
                     lexical_best_score = score
                     lexical_best_bill = bill
 
-            if lexical_best_bill is not None and lexical_best_score >= 0.4:
+            if lexical_best_bill is not None and lexical_best_score >= 0.35:
                 print(f"🔎 ask() lexical bill match={lexical_best_score:.2f}:", lexical_best_bill.title)
                 target_bill = lexical_best_bill
 
+        # 3. If target_bill is identified, try to answer directly from its chunks in DB!
+        if target_bill is not None:
+            chunks = db.query(Chunk).filter(Chunk.bill_id == target_bill.id).all()
+
+            # If bill was not processed or has no chunks yet, attempt lazy processing if possible
+            if not chunks:
                 if not target_bill.local_path:
                     print("⬇️ ask() downloading matched bill...")
                     path = download_pdf(target_bill.pdf_url)
@@ -502,11 +488,9 @@ def ask(query: str, pdf_url: str | None = None):
                         target_bill.local_path = path
                         db.commit()
 
-                has_chunks = _bill_has_chunks(db, target_bill.id)
-                if target_bill.local_path and (not target_bill.processed or not has_chunks):
+                if target_bill.local_path:
                     print("⚙️ ask() processing matched bill...")
                     original_chunks, compressed_chunks = process_pdf_to_chunks(target_bill.local_path)
-
                     if target_bill.summary is None and compressed_chunks:
                         summary = generate_summary(compressed_chunks)
                         if summary:
@@ -523,204 +507,105 @@ def ask(query: str, pdf_url: str | None = None):
                                     embedding=embedding,
                                 )
                             )
-
                         target_bill.processed = True
                         db.commit()
+                    db.expire_all()
+                    chunks = db.query(Chunk).filter(Chunk.bill_id == target_bill.id).all()
 
-                db.expire_all()
-                target_bill = db.query(Bill).filter(Bill.id == target_bill.id).first()
+            if chunks:
+                query_embedding = get_embedding(query)
+                context_chunks = []
 
-        query_embedding = get_embedding(query)
-        # If embeddings are temporarily unavailable on the host,
-        # fall back to bill-level retrieval instead of hard-failing.
-        if query_embedding is None:
-            print("🟡 Query embedding unavailable; falling back to bill-level retrieval")
+                if query_embedding:
+                    def cosine_similarity(a: list[float], b: list[float]) -> float:
+                        dot = sum(x * y for x, y in zip(a, b))
+                        norm_a = math.sqrt(sum(x * x for x in a))
+                        norm_b = math.sqrt(sum(y * y for y in b))
+                        if norm_a == 0 or norm_b == 0:
+                            return 0.0
+                        return dot / (norm_a * norm_b)
 
-            if target_bill is not None:
-                fallback_chunks = (
-                    db.query(Chunk)
-                    .filter(Chunk.bill_id == target_bill.id)
-                    .order_by(Chunk.id.asc())
-                    .limit(3)
-                    .all()
-                )
-                context_chunks = [c.original_text for c in fallback_chunks if c.original_text]
+                    scored = []
+                    for c in chunks:
+                        if c.embedding is not None and len(c.embedding) > 0:
+                            try:
+                                score = cosine_similarity(query_embedding, list(c.embedding))
+                                scored.append((score, c))
+                            except Exception:
+                                pass
+
+                    if scored:
+                        scored.sort(key=lambda x: x[0], reverse=True)
+                        context_chunks = [c.original_text for _, c in scored[:4] if c.original_text]
+
+                if not context_chunks:
+                    context_chunks = [c.original_text for c in chunks[:4] if c.original_text]
+
                 if context_chunks:
                     answer = answer_question(query, context_chunks)
                     return {"answer": answer, "pdf_url": target_bill.pdf_url}
 
-                # Bill exists but has no chunks yet: trigger one direct processing attempt.
-                has_chunks = _bill_has_chunks(db, target_bill.id)
-                if target_bill.local_path and not has_chunks:
-                    print("⚙️ ask() no chunks found; processing matched bill directly...")
-                    original_chunks, compressed_chunks = process_pdf_to_chunks(target_bill.local_path)
-                    if original_chunks:
-                        for orig, comp in zip(original_chunks, compressed_chunks):
-                            embedding = get_embedding(comp)
-                            db.add(
-                                Chunk(
-                                    bill_id=target_bill.id,
-                                    original_text=orig,
-                                    compressed_text=comp,
-                                    embedding=embedding,
-                                )
-                            )
-                        target_bill.processed = True
-                        db.commit()
-
-                    fallback_chunks = (
-                        db.query(Chunk)
-                        .filter(Chunk.bill_id == target_bill.id)
-                        .order_by(Chunk.id.asc())
-                        .limit(3)
-                        .all()
-                    )
-                    context_chunks = [c.original_text for c in fallback_chunks if c.original_text]
-                    if context_chunks:
-                        answer = answer_question(query, context_chunks)
-                        return {"answer": answer, "pdf_url": target_bill.pdf_url}
-
-            fetch_result = fetch_bill(query)
-            pdf_url = fetch_result.get("pdf_url") if isinstance(fetch_result, dict) else None
-
-            if not pdf_url:
-                return {
-                    "answer": "I could not find a closely related bill yet. Please try a more specific bill name.",
-                    "pdf_url": None,
-                }
-
-            bill = db.query(Bill).filter(Bill.pdf_url == pdf_url, Bill.processed.is_(True)).first()
-            if not bill:
-                return {
-                    "answer": "I found a related bill and started processing it. Please try again shortly.",
-                    "pdf_url": pdf_url,
-                }
-
-            # Use first chunks as deterministic fallback context.
-            fallback_chunks = (
-                db.query(Chunk)
-                .filter(Chunk.bill_id == bill.id)
-                .order_by(Chunk.id.asc())
-                .limit(3)
-                .all()
-            )
-            context_chunks = [c.original_text for c in fallback_chunks if c.original_text]
-
-            if not context_chunks:
-                return {
-                    "answer": "I found the bill but could not extract enough text to answer yet.",
-                    "pdf_url": pdf_url,
-                }
-
-            answer = answer_question(query, context_chunks)
-            return {"answer": answer, "pdf_url": pdf_url}
-
-        # Use chunk embeddings for similarity, but only from processed bills
-        if target_bill is not None:
-            chunks = db.query(Chunk).filter(Chunk.bill_id == target_bill.id).all()
-        else:
-            chunks = db.query(Chunk).join(Bill).filter(Bill.processed.is_(True)).all()
-
-        def cosine_similarity(a: list[float], b: list[float]) -> float:
-            dot = sum(x * y for x, y in zip(a, b))
-            norm_a = math.sqrt(sum(x * x for x in a))
-            norm_b = math.sqrt(sum(y * y for y in b))
-            if norm_a == 0 or norm_b == 0:
-                return 0.0
-            return dot / (norm_a * norm_b)
-
-        scored: list[tuple[float, Chunk]] = []
-        best_score: float | None = None
-        for chunk in chunks:
-            emb = chunk.embedding
-            # "emb" can be a numpy/pgvector array; avoid boolean context
-            if emb is None or len(emb) == 0:
-                continue
-
-            try:
-                emb_list = list(emb)
-            except Exception as exc:
-                # If an embedding cannot be converted, skip that chunk
-                print("❌ Error converting chunk embedding to list:", exc, type(emb))
-                continue
-
-            score = cosine_similarity(query_embedding, emb_list)
-            scored.append((score, chunk))
-            if best_score is None or score > best_score:
-                best_score = score
-
-        # If we have no processed chunks or the best match is weak,
-        # trigger on-demand fetch & processing for a relevant bill.
-        # Use a fairly strict threshold so that loosely related bills
-        # don't block us from searching/downloading a better match.
-        if not scored or best_score is None or best_score < 0.7:
-            print("🟡 No strong match in processed data; fetching/processing bill on demand...")
-
-            # Reuse the fetch_bill flow to locate and process the best bill.
-            fetch_result = fetch_bill(query)
-            pdf_url = None
-            if isinstance(fetch_result, dict):
-                pdf_url = fetch_result.get("pdf_url")
-
-            if not pdf_url:
-                return {
-                    "answer": "I could not find any bill closely related to your question yet.",
-                    "pdf_url": None,
-                }
-
-            bill = db.query(Bill).filter(Bill.pdf_url == pdf_url, Bill.processed.is_(True)).first()
-            if not bill:
-                return {
-                    "answer": "I started processing the most relevant bill for your question. Please try again in a little while.",
-                    "pdf_url": pdf_url,
-                }
-
-            # Restrict chunks to the chosen bill and rescore.
-            chunks = db.query(Chunk).filter(Chunk.bill_id == bill.id).all()
+        # 4. Global search across ALL processed chunks in DB if target_bill was not matched
+        query_embedding = get_embedding(query)
+        if query_embedding:
+            all_chunks = db.query(Chunk).join(Bill).filter(Bill.processed.is_(True)).all()
             scored = []
-            for chunk in chunks:
-                emb = chunk.embedding
-                if emb is None or len(emb) == 0:
-                    continue
-                try:
-                    emb_list = list(emb)
-                except Exception as exc:
-                    print("❌ Error converting chunk embedding to list (bill-restricted):", exc, type(emb))
-                    continue
-                score = cosine_similarity(query_embedding, emb_list)
-                scored.append((score, chunk))
 
-            if not scored:
-                # No scored chunks (all embeddings were None), fall back to first chunks by order.
-                print("🟡 No embeddings available; falling back to first chunks by order...")
-                fallback = (
-                    db.query(Chunk)
-                    .filter(Chunk.bill_id == bill.id)
-                    .order_by(Chunk.id.asc())
-                    .limit(3)
-                    .all()
-                )
-                context_chunks = [c.original_text for c in fallback if c.original_text]
-                if context_chunks:
-                    answer = answer_question(query, context_chunks)
-                    return {"answer": answer, "pdf_url": pdf_url}
+            def cosine_similarity(a: list[float], b: list[float]) -> float:
+                dot = sum(x * y for x, y in zip(a, b))
+                norm_a = math.sqrt(sum(x * x for x in a))
+                norm_b = math.sqrt(sum(y * y for y in b))
+                if norm_a == 0 or norm_b == 0:
+                    return 0.0
+                return dot / (norm_a * norm_b)
 
-                return {
-                    "answer": "I processed a matching bill but could not extract enough relevant content to answer this question.",
-                    "pdf_url": pdf_url,
-                }
+            for c in all_chunks:
+                if c.embedding is not None and len(c.embedding) > 0:
+                    try:
+                        score = cosine_similarity(query_embedding, list(c.embedding))
+                        if score >= 0.25:
+                            scored.append((score, c))
+                    except Exception:
+                        pass
 
-        scored.sort(key=lambda x: x[0], reverse=True)
-        top = scored[:3]
+            if scored:
+                scored.sort(key=lambda x: x[0], reverse=True)
+                top_chunks = scored[:4]
+                context_chunks = [c.original_text for _, c in top_chunks if c.original_text]
+                best_bill = top_chunks[0][1].bill
+                pdf_url_res = best_bill.pdf_url if best_bill else None
+                answer = answer_question(query, context_chunks)
+                return {"answer": answer, "pdf_url": pdf_url_res}
 
-        context_chunks = [c.original_text for _, c in top if c.original_text]
-        answer = answer_question(query, context_chunks)
+        # 5. Last resort: scan source site on-demand for un-ingested bills
+        print("🔎 Bill not in DB, scanning source site...")
+        fetch_result = fetch_bill(query)
+        pdf_url_res = fetch_result.get("pdf_url") if isinstance(fetch_result, dict) else None
 
-        # Use the best-scoring chunk's bill to expose a PDF link
-        best_chunk = top[0][1]
-        pdf_url = best_chunk.bill.pdf_url if best_chunk.bill else None
+        if not pdf_url_res:
+            return {
+                "answer": "I could not find a closely related bill yet. Please try asking about a specific bill title.",
+                "pdf_url": None,
+            }
 
-        return {"answer": answer, "pdf_url": pdf_url}
+        bill = db.query(Bill).filter(Bill.pdf_url == pdf_url_res).first()
+        if bill:
+            bill_chunks = db.query(Chunk).filter(Chunk.bill_id == bill.id).limit(4).all()
+            context_chunks = [c.original_text for c in bill_chunks if c.original_text]
+            if context_chunks:
+                answer = answer_question(query, context_chunks)
+                return {"answer": answer, "pdf_url": pdf_url_res}
+
+        return {
+            "answer": "I found a related bill and started processing it. Please try your question again in a moment.",
+            "pdf_url": pdf_url_res,
+        }
+
+    except Exception as exc:
+        print("❌ Error in /ask endpoint:", exc)
+        import traceback
+        traceback.print_exc()
+        return {"answer": "I encountered an error while processing your request. Please try again.", "pdf_url": None}
 
     finally:
         db.close()
