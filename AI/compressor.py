@@ -8,7 +8,7 @@ load_dotenv()
 client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
 
-def compress_chunks_batch(chunks, model="llama-3.3-70b-versatile", batch_size=5):
+def compress_chunks_batch(chunks, model="openai/gpt-oss-120b", batch_size=5):
     compressed = []
     total = len(chunks)
 
