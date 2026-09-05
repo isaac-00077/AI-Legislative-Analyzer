@@ -70,19 +70,50 @@ app.add_middleware(
 Base.metadata.create_all(bind=engine)
 
 
+def fill_missing_embeddings_worker() -> None:
+    """Background worker to calculate and populate missing embeddings in Supabase."""
+    print("🧠 Starting background embedding backfill worker...")
+    db = SessionLocal()
+    try:
+        chunks_to_embed = db.query(Chunk).filter(Chunk.embedding.is_(None)).limit(100).all()
+        if not chunks_to_embed:
+            print("✅ All chunks in Supabase already have valid embeddings.")
+            return
+
+        print(f"⚙️ Populating embeddings for {len(chunks_to_embed)} chunks in Supabase...")
+        count = 0
+        for chunk in chunks_to_embed:
+            text = chunk.compressed_text or chunk.original_text
+            if text:
+                emb = get_embedding(text)
+                if emb:
+                    chunk.embedding = emb
+                    count += 1
+        db.commit()
+        print(f"✅ Successfully backfilled {count} embeddings in Supabase.")
+    except Exception as exc:
+        print("❌ Embedding backfill error:", exc)
+    finally:
+        db.close()
+
+
 @app.on_event("startup")
 def start_app() -> None:
     print("🚀 Starting app...")
+
+    # Start background embedding backfill for NULL embeddings in Supabase
+    embed_thread = threading.Thread(target=fill_missing_embeddings_worker, daemon=True)
+    embed_thread.start()
 
     def bootstrap_pipeline() -> None:
         """Run heavy initialization work without blocking API startup."""
 
         try:
             # 🟢 Step 1: ingest only recent bill pages to keep startup light
-            process_new_pdfs(max_bill_pages=15, source="startup")
+            process_new_pdfs(max_bill_pages=10, source="startup")
 
-            # 🟢 Step 2: download + process PDFs from FIRST 5 bill pages
-            priority_items = get_pdf_links(max_bill_pages=5)
+            # 🟢 Step 2: download + process PDFs from FIRST 3 bill pages
+            priority_items = get_pdf_links(max_bill_pages=3)
             priority_urls = {item["pdf_url"] for item in priority_items}
 
             if priority_urls:
@@ -96,7 +127,6 @@ def start_app() -> None:
                             print("⬇️ Initial download:", bill.title)
                             path = download_pdf(bill.pdf_url)
                             if not path:
-                                # Skip processing if download failed
                                 continue
                             bill.local_path = path
 
@@ -106,7 +136,6 @@ def start_app() -> None:
 
                             original_chunks, compressed_chunks = process_pdf_to_chunks(bill.local_path)
 
-                            # Generate summary once for dashboard
                             if bill.summary is None and compressed_chunks:
                                 summary = generate_summary(compressed_chunks)
                                 if summary:
@@ -115,8 +144,6 @@ def start_app() -> None:
                             if original_chunks:
                                 for orig, comp in zip(original_chunks, compressed_chunks):
                                     embedding = get_embedding(comp)
-                                    # Store chunks even if embedding is None; text-based retrieval
-                                    # will still work for answering.
                                     db.add(
                                         Chunk(
                                             bill_id=bill.id,
@@ -134,10 +161,8 @@ def start_app() -> None:
                     db.close()
 
         except Exception as exc:
-            # Keep server alive even if bootstrap fails.
             print("❌ Bootstrap pipeline error:", exc)
         finally:
-            # 🔁 Start background scheduler (link-only ingestion for new PDFs)
             run_scheduler()
 
     thread = threading.Thread(target=bootstrap_pipeline, daemon=True)
