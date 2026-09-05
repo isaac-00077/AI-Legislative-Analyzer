@@ -8,9 +8,4 @@ beautifulsoup4
 python-dotenv
 groq
 requests
-torch>=2.4.0
-transformers
-sentence-transformers
-scikit-learn
-scipy
 numpy

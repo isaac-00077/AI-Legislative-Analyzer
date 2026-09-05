@@ -4,8 +4,8 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 import threading
-import math
 import re
+import traceback
 from typing import List
 
 from database import engine, SessionLocal
@@ -15,7 +15,6 @@ from scraper.downloader import download_pdf
 from scraper.fetch_links import get_pdf_links
 
 from AI.extractor import process_pdf_to_chunks
-from AI.embedder import get_embedding
 from AI.summarizer import generate_summary
 from AI.qa import answer_question
 
@@ -70,40 +69,9 @@ app.add_middleware(
 Base.metadata.create_all(bind=engine)
 
 
-def fill_missing_embeddings_worker() -> None:
-    """Background worker to calculate and populate missing embeddings in Supabase."""
-    print("🧠 Starting background embedding backfill worker...")
-    db = SessionLocal()
-    try:
-        chunks_to_embed = db.query(Chunk).filter(Chunk.embedding.is_(None)).limit(100).all()
-        if not chunks_to_embed:
-            print("✅ All chunks in Supabase already have valid embeddings.")
-            return
-
-        print(f"⚙️ Populating embeddings for {len(chunks_to_embed)} chunks in Supabase...")
-        count = 0
-        for chunk in chunks_to_embed:
-            text = chunk.compressed_text or chunk.original_text
-            if text:
-                emb = get_embedding(text)
-                if emb:
-                    chunk.embedding = emb
-                    count += 1
-        db.commit()
-        print(f"✅ Successfully backfilled {count} embeddings in Supabase.")
-    except Exception as exc:
-        print("❌ Embedding backfill error:", exc)
-    finally:
-        db.close()
-
-
 @app.on_event("startup")
 def start_app() -> None:
     print("🚀 Starting app...")
-
-    # Start background embedding backfill for NULL embeddings in Supabase
-    embed_thread = threading.Thread(target=fill_missing_embeddings_worker, daemon=True)
-    embed_thread.start()
 
     def bootstrap_pipeline() -> None:
         """Run heavy initialization work without blocking API startup."""
@@ -143,13 +111,12 @@ def start_app() -> None:
 
                             if original_chunks:
                                 for orig, comp in zip(original_chunks, compressed_chunks):
-                                    embedding = get_embedding(comp)
                                     db.add(
                                         Chunk(
                                             bill_id=bill.id,
                                             original_text=orig,
                                             compressed_text=comp,
-                                            embedding=embedding,
+                                            embedding=None,
                                         )
                                     )
 
@@ -188,124 +155,7 @@ def fetch_bill(query: str):
     db = SessionLocal()
 
     try:
-        # Step 0: semantic search over already-processed bills using embeddings
-        query_embedding = get_embedding(query)
-        if query_embedding:
-            best_score: float | None = None
-            best_bill: Bill | None = None
-
-            # Only look at chunks for bills that are already processed
-            chunks = db.query(Chunk).join(Bill).filter(Bill.processed.is_(True)).all()
-
-            def cosine_similarity(a: list[float], b: list[float]) -> float:
-                dot = sum(x * y for x, y in zip(a, b))
-                norm_a = math.sqrt(sum(x * x for x in a))
-                norm_b = math.sqrt(sum(y * y for y in b))
-                if norm_a == 0 or norm_b == 0:
-                    return 0.0
-                return dot / (norm_a * norm_b)
-
-            for chunk in chunks:
-                emb = chunk.embedding
-                # emb can be a numpy/pgvector array; avoid boolean context
-                if emb is None:
-                    continue
-
-                score = cosine_similarity(query_embedding, list(emb))
-                if best_score is None or score > best_score:
-                    best_score = score
-                    best_bill = chunk.bill
-
-            # If we found a reasonably similar bill, return it immediately
-            if best_bill is not None and best_score is not None and best_score >= 0.4:
-                return {
-                    "message": "Bill ready (semantic match)",
-                    "pdf_url": best_bill.pdf_url,
-                    "local_path": best_bill.local_path,
-                    "processed": best_bill.processed,
-                    "similarity": best_score,
-                }
-
-        # Step 0.5: semantic search over bill titles using title embeddings
-        if query_embedding:
-            title_best_score: float | None = None
-            title_best_bill: Bill | None = None
-
-            bills_for_titles = db.query(Bill).all()
-
-            def cosine_similarity(a: list[float], b: list[float]) -> float:  # reuse
-                dot = sum(x * y for x, y in zip(a, b))
-                norm_a = math.sqrt(sum(x * x for x in a))
-                norm_b = math.sqrt(sum(y * y for y in b))
-                if norm_a == 0 or norm_b == 0:
-                    return 0.0
-                return dot / (norm_a * norm_b)
-
-            for bill in bills_for_titles:
-                emb = bill.title_embedding
-                # emb can be a numpy/pgvector array; avoid boolean context
-                if emb is None:
-                    continue
-
-                score = cosine_similarity(query_embedding, list(emb))
-                if title_best_score is None or score > title_best_score:
-                    title_best_score = score
-                    title_best_bill = bill
-
-            if (
-                title_best_bill is not None
-                and title_best_score is not None
-                and title_best_score > 0.5
-            ):
-                bill = title_best_bill
-                print("🔍 Match found (title semantic):", bill.title)
-
-                # Same lazy download + processing flow as keyword match
-                if not bill.local_path:
-                    print("⬇️ Lazy downloading (title semantic)...")
-                    path = download_pdf(bill.pdf_url)
-                    if not path:
-                        return {"message": "Failed to download existing bill PDF"}
-                    bill.local_path = path
-                    db.commit()
-
-                if not bill.processed:
-                    print("⚙️ Lazy processing (title semantic)...")
-
-                    original_chunks, compressed_chunks = process_pdf_to_chunks(bill.local_path)
-
-                    if bill.summary is None and compressed_chunks:
-                        summary = generate_summary(compressed_chunks)
-                        if summary:
-                            bill.summary = summary
-
-                    if original_chunks:
-                        for orig, comp in zip(original_chunks, compressed_chunks):
-                            embedding = get_embedding(comp)
-                            if embedding is None:
-                                continue
-
-                            db.add(
-                                Chunk(
-                                    bill_id=bill.id,
-                                    original_text=orig,
-                                    compressed_text=comp,
-                                    embedding=embedding,
-                                )
-                            )
-
-                        bill.processed = True
-                        db.commit()
-
-                return {
-                    "message": "Bill ready (title semantic match)",
-                    "pdf_url": bill.pdf_url,
-                    "local_path": bill.local_path,
-                    "processed": bill.processed,
-                    "similarity": title_best_score,
-                }
-
-        # Step 1: try to find a matching bill already in the DB
+        # Step 1: try to find a matching bill already in the DB (lexical)
         bills = db.query(Bill).all()
         lexical_best_bill: Bill | None = None
         lexical_best_score = 0.0
@@ -345,15 +195,12 @@ def fetch_bill(query: str):
 
                 if original_chunks:
                     for orig, comp in zip(original_chunks, compressed_chunks):
-                        embedding = get_embedding(comp)
-                        # Store chunks even if embedding is None; text-based retrieval
-                        # will still work for answering.
                         db.add(
                             Chunk(
                                 bill_id=bill.id,
                                 original_text=orig,
                                 compressed_text=comp,
-                                embedding=embedding,
+                                embedding=None,
                             )
                         )
 
@@ -369,7 +216,6 @@ def fetch_bill(query: str):
 
         # Step 2: not in DB → search source site for a matching PDF
         print("🔎 Bill not in DB, scanning source site...")
-        # Keep live query scraping bounded to recent listings.
         links = get_pdf_links(max_bill_pages=50)
 
         source_best = None
@@ -422,15 +268,12 @@ def fetch_bill(query: str):
 
                 if original_chunks:
                     for orig, comp in zip(original_chunks, compressed_chunks):
-                        embedding = get_embedding(comp)
-                        # Store chunks even if embedding is None; text-based retrieval
-                        # will still work for answering.
                         db.add(
                             Chunk(
                                 bill_id=bill.id,
                                 original_text=orig,
                                 compressed_text=comp,
-                                embedding=embedding,
+                                embedding=None,
                             )
                         )
 
@@ -474,6 +317,11 @@ def dashboard() -> List[dict[str, str]]:
 
 @app.get("/ask")
 def ask(query: str, pdf_url: str | None = None):
+    """Answer a user question using text chunks from Supabase + Groq API.
+
+    No SentenceTransformer / PyTorch needed — uses plain text retrieval.
+    """
+    print(f"📩 /ask called — query={query!r}, pdf_url={pdf_url!r}")
     db = SessionLocal()
 
     try:
@@ -482,8 +330,10 @@ def ask(query: str, pdf_url: str | None = None):
         # 1. Direct PDF URL match if provided by frontend
         if pdf_url:
             target_bill = db.query(Bill).filter(Bill.pdf_url == pdf_url).first()
+            if target_bill:
+                print(f"✅ ask() matched bill by pdf_url: {target_bill.title}")
 
-        # 2. If no target_bill yet, attempt lexical/semantic match against existing bills in DB
+        # 2. Lexical match against bill titles in DB
         if target_bill is None:
             lexical_best_bill: Bill | None = None
             lexical_best_score = 0.0
@@ -497,14 +347,15 @@ def ask(query: str, pdf_url: str | None = None):
                     lexical_best_bill = bill
 
             if lexical_best_bill is not None and lexical_best_score >= 0.35:
-                print(f"🔎 ask() lexical bill match={lexical_best_score:.2f}:", lexical_best_bill.title)
+                print(f"🔎 ask() lexical match={lexical_best_score:.2f}: {lexical_best_bill.title}")
                 target_bill = lexical_best_bill
 
-        # 3. If target_bill is identified, try to answer directly from its chunks in DB!
+        # 3. Answer from existing text chunks (no embeddings needed)
         if target_bill is not None:
             chunks = db.query(Chunk).filter(Chunk.bill_id == target_bill.id).all()
+            print(f"📦 Found {len(chunks)} chunks for bill id={target_bill.id}")
 
-            # If bill was not processed or has no chunks yet, attempt lazy processing if possible
+            # Lazy processing if bill has no chunks yet
             if not chunks:
                 if not target_bill.local_path:
                     print("⬇️ ask() downloading matched bill...")
@@ -523,87 +374,34 @@ def ask(query: str, pdf_url: str | None = None):
 
                     if original_chunks:
                         for orig, comp in zip(original_chunks, compressed_chunks):
-                            embedding = get_embedding(comp)
                             db.add(
                                 Chunk(
                                     bill_id=target_bill.id,
                                     original_text=orig,
                                     compressed_text=comp,
-                                    embedding=embedding,
+                                    embedding=None,
                                 )
                             )
                         target_bill.processed = True
                         db.commit()
                     db.expire_all()
                     chunks = db.query(Chunk).filter(Chunk.bill_id == target_bill.id).all()
+                    print(f"📦 After processing: {len(chunks)} chunks")
 
             if chunks:
-                query_embedding = get_embedding(query)
-                context_chunks = []
-
-                if query_embedding:
-                    def cosine_similarity(a: list[float], b: list[float]) -> float:
-                        dot = sum(x * y for x, y in zip(a, b))
-                        norm_a = math.sqrt(sum(x * x for x in a))
-                        norm_b = math.sqrt(sum(y * y for y in b))
-                        if norm_a == 0 or norm_b == 0:
-                            return 0.0
-                        return dot / (norm_a * norm_b)
-
-                    scored = []
-                    for c in chunks:
-                        if c.embedding is not None and len(c.embedding) > 0:
-                            try:
-                                score = cosine_similarity(query_embedding, list(c.embedding))
-                                scored.append((score, c))
-                            except Exception:
-                                pass
-
-                    if scored:
-                        scored.sort(key=lambda x: x[0], reverse=True)
-                        context_chunks = [c.original_text for _, c in scored[:4] if c.original_text]
-
-                if not context_chunks:
-                    context_chunks = [c.original_text for c in chunks[:4] if c.original_text]
+                # Use first several text chunks as context — no vector search needed
+                context_chunks = [
+                    c.original_text for c in chunks[:6] if c.original_text
+                ]
+                print(f"📝 Sending {len(context_chunks)} context chunks to Groq")
 
                 if context_chunks:
                     answer = answer_question(query, context_chunks)
+                    print("✅ Got answer from Groq, returning to frontend")
                     return {"answer": answer, "pdf_url": target_bill.pdf_url}
 
-        # 4. Global search across ALL processed chunks in DB if target_bill was not matched
-        query_embedding = get_embedding(query)
-        if query_embedding:
-            all_chunks = db.query(Chunk).join(Bill).filter(Bill.processed.is_(True)).all()
-            scored = []
-
-            def cosine_similarity(a: list[float], b: list[float]) -> float:
-                dot = sum(x * y for x, y in zip(a, b))
-                norm_a = math.sqrt(sum(x * x for x in a))
-                norm_b = math.sqrt(sum(y * y for y in b))
-                if norm_a == 0 or norm_b == 0:
-                    return 0.0
-                return dot / (norm_a * norm_b)
-
-            for c in all_chunks:
-                if c.embedding is not None and len(c.embedding) > 0:
-                    try:
-                        score = cosine_similarity(query_embedding, list(c.embedding))
-                        if score >= 0.25:
-                            scored.append((score, c))
-                    except Exception:
-                        pass
-
-            if scored:
-                scored.sort(key=lambda x: x[0], reverse=True)
-                top_chunks = scored[:4]
-                context_chunks = [c.original_text for _, c in top_chunks if c.original_text]
-                best_bill = top_chunks[0][1].bill
-                pdf_url_res = best_bill.pdf_url if best_bill else None
-                answer = answer_question(query, context_chunks)
-                return {"answer": answer, "pdf_url": pdf_url_res}
-
-        # 5. Last resort: scan source site on-demand for un-ingested bills
-        print("🔎 Bill not in DB, scanning source site...")
+        # 4. No bill matched in DB — try source site on-demand
+        print("🔎 No bill matched in DB, scanning source site...")
         fetch_result = fetch_bill(query)
         pdf_url_res = fetch_result.get("pdf_url") if isinstance(fetch_result, dict) else None
 
@@ -615,7 +413,7 @@ def ask(query: str, pdf_url: str | None = None):
 
         bill = db.query(Bill).filter(Bill.pdf_url == pdf_url_res).first()
         if bill:
-            bill_chunks = db.query(Chunk).filter(Chunk.bill_id == bill.id).limit(4).all()
+            bill_chunks = db.query(Chunk).filter(Chunk.bill_id == bill.id).limit(6).all()
             context_chunks = [c.original_text for c in bill_chunks if c.original_text]
             if context_chunks:
                 answer = answer_question(query, context_chunks)
@@ -628,7 +426,6 @@ def ask(query: str, pdf_url: str | None = None):
 
     except Exception as exc:
         print("❌ Error in /ask endpoint:", exc)
-        import traceback
         traceback.print_exc()
         return {"answer": "I encountered an error while processing your request. Please try again.", "pdf_url": None}
 

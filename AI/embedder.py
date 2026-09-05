@@ -1,65 +1,14 @@
-import sys
-import threading
-import traceback
+"""Embedding helper.
 
-# Ensure stdout/stderr handle UTF-8 on Windows consoles
-if sys.stdout and hasattr(sys.stdout, "reconfigure"):
-    try:
-        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-    except Exception:
-        pass
-if sys.stderr and hasattr(sys.stderr, "reconfigure"):
-    try:
-        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
-    except Exception:
-        pass
-
-
-# Lazily loaded global model instance so that importing this module
-# does not block app startup. Both the heavy library import and the
-# model construction happen only on first use.
-_model = None
-_model_lock = threading.Lock()
-
-
-def _get_model():
-    global _model
-
-    # Fast path without acquiring the lock when the model is ready.
-    if _model is not None:
-        return _model
-
-    with _model_lock:
-        if _model is None:
-            # Local import so that uvicorn startup does not pay the
-            # cost of loading sentence_transformers and its deps.
-            try:
-                import torch
-                import torch.nn as nn
-                from sentence_transformers import SentenceTransformer
-
-                print("Loading embedding model: all-MiniLM-L6-v2")
-                _model = SentenceTransformer("all-MiniLM-L6-v2")
-                print("Embedding model loaded successfully")
-            except Exception as exc:
-                print("Failed to load embedding model:", exc)
-                traceback.print_exc()
-                raise
-        return _model
+On Render Free Tier (512 MB RAM) the SentenceTransformer model cannot
+load without OOM-killing the process.  Until the deployment target has
+enough memory, this module is a deliberate **no-op** that always returns
+``None``.  Every call-site already handles ``None`` by falling through
+to plain-text chunk retrieval, so the Q&A pipeline works correctly
+without embeddings.
+"""
 
 
 def get_embedding(text: str):
-    try:
-        if not text or not text.strip():
-            return None
-
-        model = _get_model()
-        embedding = model.encode(text)
-
-        # convert numpy → list (pgvector accepts list)
-        return embedding.tolist()
-
-    except Exception as e:
-        print("❌ Embedding error:", e)
-        traceback.print_exc()
-        return None
+    """Return ``None`` – embedding is disabled on low-memory hosts."""
+    return None
