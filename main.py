@@ -21,13 +21,25 @@ from AI.qa import answer_question
 app = FastAPI()
 
 
+STOP_WORDS = {
+    "a", "about", "an", "and", "are", "as", "at", "be", "bill", "by", "can",
+    "could", "do", "for", "from", "give", "has", "have", "i", "in", "info",
+    "information", "is", "it", "me", "more", "my", "of", "on", "or", "tell",
+    "that", "the", "this", "to", "was", "what", "which", "with", "would", "you"
+}
+
+
 def _normalize_text(value: str) -> str:
     cleaned = re.sub(r"[^a-z0-9]+", " ", (value or "").lower()).strip()
     return re.sub(r"\s+", " ", cleaned)
 
 
 def _token_set(value: str) -> set[str]:
-    return {t for t in _normalize_text(value).split(" ") if len(t) > 2}
+    tokens = set()
+    for t in _normalize_text(value).split(" "):
+        if len(t) >= 2 and t not in STOP_WORDS:
+            tokens.add(t)
+    return tokens
 
 
 def _lexical_score(query: str, candidate: str) -> float:
@@ -327,33 +339,31 @@ def ask(query: str, pdf_url: str | None = None):
     try:
         target_bill: Bill | None = None
 
-        # 1. Direct PDF URL match if provided by frontend
-        if pdf_url:
+        # 1. Lexical match query against all bill titles in DB first
+        lexical_best_bill: Bill | None = None
+        lexical_best_score = 0.0
+        for bill in db.query(Bill).all():
+            score = max(
+                _lexical_score(query, bill.title or ""),
+                _lexical_score(query, bill.pdf_url or ""),
+            )
+            if score > lexical_best_score:
+                lexical_best_score = score
+                lexical_best_bill = bill
+
+        if lexical_best_bill is not None and lexical_best_score >= 0.25:
+            print(f"🔎 ask() matched query to bill in DB (score={lexical_best_score:.2f}): {lexical_best_bill.title}")
+            target_bill = lexical_best_bill
+        elif pdf_url:
+            # 2. Fall back to active card pdf_url if query is generic (e.g. "what is this bill about?")
             target_bill = db.query(Bill).filter(Bill.pdf_url == pdf_url).first()
             if target_bill:
-                print(f"✅ ask() matched bill by pdf_url: {target_bill.title}")
-
-        # 2. Lexical match against bill titles in DB
-        if target_bill is None:
-            lexical_best_bill: Bill | None = None
-            lexical_best_score = 0.0
-            for bill in db.query(Bill).all():
-                score = max(
-                    _lexical_score(query, bill.title or ""),
-                    _lexical_score(query, bill.pdf_url or ""),
-                )
-                if score > lexical_best_score:
-                    lexical_best_score = score
-                    lexical_best_bill = bill
-
-            if lexical_best_bill is not None and lexical_best_score >= 0.35:
-                print(f"🔎 ask() lexical match={lexical_best_score:.2f}: {lexical_best_bill.title}")
-                target_bill = lexical_best_bill
+                print(f"✅ ask() matched active card by pdf_url: {target_bill.title}")
 
         # 3. Answer from existing text chunks (no embeddings needed)
         if target_bill is not None:
             chunks = db.query(Chunk).filter(Chunk.bill_id == target_bill.id).all()
-            print(f"📦 Found {len(chunks)} chunks for bill id={target_bill.id}")
+            print(f"📦 Found {len(chunks)} chunks for bill id={target_bill.id} ({target_bill.title})")
 
             # Lazy processing if bill has no chunks yet
             if not chunks:
@@ -389,11 +399,20 @@ def ask(query: str, pdf_url: str | None = None):
                     print(f"📦 After processing: {len(chunks)} chunks")
 
             if chunks:
-                # Use first several text chunks as context — no vector search needed
+                # Rank chunks by relevance to query keywords if available
+                q_keywords = _token_set(query)
+                if q_keywords:
+                    def chunk_score(c: Chunk) -> int:
+                        text_norm = _normalize_text(c.original_text or "")
+                        return sum(1 for kw in q_keywords if kw in text_norm)
+                    sorted_chunks = sorted(chunks, key=chunk_score, reverse=True)
+                else:
+                    sorted_chunks = chunks
+
                 context_chunks = [
-                    c.original_text for c in chunks[:6] if c.original_text
+                    c.original_text for c in sorted_chunks[:8] if c.original_text
                 ]
-                print(f"📝 Sending {len(context_chunks)} context chunks to Groq")
+                print(f"📝 Sending {len(context_chunks)} context chunks to Groq for '{target_bill.title}'")
 
                 if context_chunks:
                     answer = answer_question(query, context_chunks)
