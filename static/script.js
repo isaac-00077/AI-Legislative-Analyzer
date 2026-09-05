@@ -51,6 +51,7 @@ let autoSlidePausedByUser = false;
 let isAnimating = false;
 let currentSummaryParts = null;
 let activeChatPdfUrl = null;
+let lastDiscussedChatPdfUrl = null;
 
 function shouldScopeToActiveBill(query) {
   const q = String(query || "").trim().toLowerCase();
@@ -387,6 +388,9 @@ function renderCurrentBill() {
 
   const bill = bills[currentBillIndex];
   activeChatPdfUrl = bill.pdf_url || null;
+  if (!lastDiscussedChatPdfUrl) {
+    lastDiscussedChatPdfUrl = bill.pdf_url || null;
+  }
   const titleParts = cleanBillTitle(bill.title);
   const summaryParts = splitSummaryToThreeParts(bill.summary);
   currentSummaryParts = summaryParts;
@@ -590,9 +594,10 @@ async function submitChatQuestion(event) {
   chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
 
   try {
+    const pdfUrlToUse = lastDiscussedChatPdfUrl || activeChatPdfUrl;
     let url = `${API_BASE}/ask?query=${encodeURIComponent(query)}`;
-    if (activeChatPdfUrl && shouldScopeToActiveBill(query)) {
-      url += `&pdf_url=${encodeURIComponent(activeChatPdfUrl)}`;
+    if (pdfUrlToUse) {
+      url += `&pdf_url=${encodeURIComponent(pdfUrlToUse)}`;
     }
 
     const response = await fetch(url);
@@ -604,6 +609,7 @@ async function submitChatQuestion(event) {
     loadingEl.remove();
     if (payload.pdf_url) {
       activeChatPdfUrl = payload.pdf_url;
+      lastDiscussedChatPdfUrl = payload.pdf_url;
     }
 
     appendMessage("bot", payload.answer || "I could not generate an answer for that yet.");

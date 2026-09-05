@@ -22,10 +22,22 @@ app = FastAPI()
 
 
 STOP_WORDS = {
-    "a", "about", "an", "and", "are", "as", "at", "be", "bill", "by", "can",
-    "could", "do", "for", "from", "give", "has", "have", "i", "in", "info",
-    "information", "is", "it", "me", "more", "my", "of", "on", "or", "tell",
-    "that", "the", "this", "to", "was", "what", "which", "with", "would", "you"
+    "a", "about", "act", "acts", "again", "against", "all", "amendment", "an", "and",
+    "any", "are", "as", "at", "be", "been", "being", "bill", "bills", "both", "but",
+    "by", "can", "code", "could", "details", "did", "do", "document", "documents",
+    "does", "don", "download", "during", "each", "else", "explain", "few", "file",
+    "files", "first", "for", "from", "full", "further", "get", "give", "gives",
+    "had", "has", "have", "here", "how", "i", "if", "in", "info", "information",
+    "into", "is", "it", "its", "just", "key", "know", "law", "laws", "list",
+    "me", "more", "most", "my", "no", "nor", "not", "now", "of", "off", "on",
+    "once", "only", "or", "other", "our", "out", "over", "own", "passed", "pdf",
+    "point", "points", "provisions", "purpose", "question", "report", "reports",
+    "rule", "rules", "s", "same", "section", "sections", "see", "should", "show",
+    "so", "some", "such", "summary", "t", "tell", "tells", "text", "than", "that",
+    "the", "their", "them", "then", "there", "these", "this", "those", "through",
+    "to", "too", "under", "until", "up", "upon", "very", "want", "wants", "was",
+    "were", "what", "when", "where", "which", "who", "whom", "why", "will", "with",
+    "would", "year", "years", "you", "your"
 }
 
 
@@ -329,38 +341,38 @@ def dashboard() -> List[dict[str, str]]:
 
 @app.get("/ask")
 def ask(query: str, pdf_url: str | None = None):
-    """Answer a user question using text chunks from Supabase + Groq API.
-
-    No SentenceTransformer / PyTorch needed — uses plain text retrieval.
-    """
+    """Answer a user question using text chunks from Supabase + Groq API."""
     print(f"📩 /ask called — query={query!r}, pdf_url={pdf_url!r}")
     db = SessionLocal()
 
     try:
         target_bill: Bill | None = None
+        q_keywords = _token_set(query)
 
-        # 1. Lexical match query against all bill titles in DB first
-        lexical_best_bill: Bill | None = None
-        lexical_best_score = 0.0
-        for bill in db.query(Bill).all():
-            score = max(
-                _lexical_score(query, bill.title or ""),
-                _lexical_score(query, bill.pdf_url or ""),
-            )
-            if score > lexical_best_score:
-                lexical_best_score = score
-                lexical_best_bill = bill
+        # 1. Search DB for bill title matching query topic keywords ONLY if topic keywords exist
+        if q_keywords:
+            lexical_best_bill: Bill | None = None
+            lexical_best_score = 0.0
+            for bill in db.query(Bill).all():
+                score = max(
+                    _lexical_score(query, bill.title or ""),
+                    _lexical_score(query, bill.pdf_url or ""),
+                )
+                if score > lexical_best_score:
+                    lexical_best_score = score
+                    lexical_best_bill = bill
 
-        if lexical_best_bill is not None and lexical_best_score >= 0.25:
-            print(f"🔎 ask() matched query to bill in DB (score={lexical_best_score:.2f}): {lexical_best_bill.title}")
-            target_bill = lexical_best_bill
-        elif pdf_url:
-            # 2. Fall back to active card pdf_url if query is generic (e.g. "what is this bill about?")
+            if lexical_best_bill is not None and lexical_best_score >= 0.40:
+                print(f"🔎 ask() matched query to bill in DB (score={lexical_best_score:.2f}): {lexical_best_bill.title}")
+                target_bill = lexical_best_bill
+
+        # 2. If no topic match, fall back to pdf_url provided by frontend (active chat/card bill)
+        if target_bill is None and pdf_url:
             target_bill = db.query(Bill).filter(Bill.pdf_url == pdf_url).first()
             if target_bill:
-                print(f"✅ ask() matched active card by pdf_url: {target_bill.title}")
+                print(f"✅ ask() matched context bill by pdf_url: {target_bill.title}")
 
-        # 3. Answer from existing text chunks (no embeddings needed)
+        # 3. Answer from existing text chunks in DB if bill is found
         if target_bill is not None:
             chunks = db.query(Chunk).filter(Chunk.bill_id == target_bill.id).all()
             print(f"📦 Found {len(chunks)} chunks for bill id={target_bill.id} ({target_bill.title})")
@@ -400,7 +412,6 @@ def ask(query: str, pdf_url: str | None = None):
 
             if chunks:
                 # Rank chunks by relevance to query keywords if available
-                q_keywords = _token_set(query)
                 if q_keywords:
                     def chunk_score(c: Chunk) -> int:
                         text_norm = _normalize_text(c.original_text or "")
@@ -419,28 +430,29 @@ def ask(query: str, pdf_url: str | None = None):
                     print("✅ Got answer from Groq, returning to frontend")
                     return {"answer": answer, "pdf_url": target_bill.pdf_url}
 
-        # 4. No bill matched in DB — try source site on-demand
-        print("🔎 No bill matched in DB, scanning source site...")
-        fetch_result = fetch_bill(query)
-        pdf_url_res = fetch_result.get("pdf_url") if isinstance(fetch_result, dict) else None
+        # 4. No bill matched in DB — scan source site ONLY if query contains specific topic keywords
+        if q_keywords:
+            print(f"🔎 No bill matched in DB for topic {q_keywords!r}, scanning source site...")
+            fetch_result = fetch_bill(query)
+            pdf_url_res = fetch_result.get("pdf_url") if isinstance(fetch_result, dict) else None
 
-        if not pdf_url_res:
-            return {
-                "answer": "I could not find a closely related bill yet. Please try asking about a specific bill title.",
-                "pdf_url": None,
-            }
+            if pdf_url_res:
+                bill = db.query(Bill).filter(Bill.pdf_url == pdf_url_res).first()
+                if bill:
+                    bill_chunks = db.query(Chunk).filter(Chunk.bill_id == bill.id).limit(8).all()
+                    context_chunks = [c.original_text for c in bill_chunks if c.original_text]
+                    if context_chunks:
+                        answer = answer_question(query, context_chunks)
+                        return {"answer": answer, "pdf_url": pdf_url_res}
 
-        bill = db.query(Bill).filter(Bill.pdf_url == pdf_url_res).first()
-        if bill:
-            bill_chunks = db.query(Chunk).filter(Chunk.bill_id == bill.id).limit(6).all()
-            context_chunks = [c.original_text for c in bill_chunks if c.original_text]
-            if context_chunks:
-                answer = answer_question(query, context_chunks)
-                return {"answer": answer, "pdf_url": pdf_url_res}
+                return {
+                    "answer": "I found a related bill and started processing it. Please try your question again in a moment.",
+                    "pdf_url": pdf_url_res,
+                }
 
         return {
-            "answer": "I found a related bill and started processing it. Please try your question again in a moment.",
-            "pdf_url": pdf_url_res,
+            "answer": "I do not have enough information about that in the current context. Please specify which bill you would like details about.",
+            "pdf_url": pdf_url,
         }
 
     except Exception as exc:
