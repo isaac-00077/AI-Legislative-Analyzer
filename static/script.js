@@ -12,9 +12,11 @@ const BILL_TRANSITION_MS = 360;
 // small heuristic: when running on Vercel we expect the hostname to
 // end with "vercel.app" and route calls to the Render API; otherwise
 // we default to same-origin.
-const API_BASE = window.location.hostname.endsWith("vercel.app")
-  ? "https://ai-legislative-analyzer-81x2.onrender.com"
-  : "";
+const RENDER_BACKEND_URL = "https://ai-legislative-analyzer-81x2.onrender.com";
+const isLocalHost =
+  window.location.hostname === "localhost" ||
+  window.location.hostname === "127.0.0.1";
+const API_BASE = isLocalHost ? "" : RENDER_BACKEND_URL;
 
 const billSlideEl = document.getElementById("bill-slide");
 const billCounterEl = document.getElementById("bill-counter");
